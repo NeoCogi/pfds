@@ -1,11 +1,11 @@
 [package]
 name = "pfds"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2018"
 license = "BSD-3-Clause"
 authors = ["Raja Lehtihet <raja.lehtihet@gmail.com>", "Wael El Oraiby <wael.eloraiby@gmail.com>"]
 description = "Purely Functional Data Structures"
-repository = "https://github.com/NeoCogi/rs-gles2"
+repository = "https://github.com/NeoCogi/pfds"
 readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
