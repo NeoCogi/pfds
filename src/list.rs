@@ -63,6 +63,20 @@ fn top<E>(l: &N<E>) -> &E {
     }
 }
 
+fn rev<E: Clone>(l: &N<E>) -> N<E> {
+    let mut n = empty();
+    let mut s = l;
+    loop {
+        match s.as_ref() {
+            Nil => return n,
+            Node(_, e, l) => {
+                n = push(&n, e.clone());
+                s = l;
+            }
+        }
+    }
+}
+
 fn len<E>(l: &N<E>) -> usize {
     match l.as_ref() {
         Nil => 0,
@@ -84,24 +98,19 @@ fn to_vec<E: Clone>(l: &N<E>) -> Vec<E> {
     }
 }
 
-pub struct List<E> {
+#[derive(Clone)]
+pub struct List<E: Clone> {
     n       : N<E>,
 }
 
-impl<E> List<E> {
+impl<E: Clone> List<E> {
     pub fn empty()              -> Self { Self { n: empty() } }
     pub fn push(&self, e: E)    -> Self { Self { n: push(&self.n, e) } }
     pub fn pop(&self)           -> Self { Self { n: pop(&self.n) } }
     pub fn top(&self)           -> &E   { top(&self.n) }
     pub fn len(&self)           -> usize{ len(&self.n) }
-}
-
-pub trait ListToVec<E: Clone> {
-    fn to_vec(&self) -> Vec<E>;
-}
-
-impl<E: Clone> ListToVec<E> for List<E> {
-    fn to_vec(&self)            -> Vec<E>   { to_vec(&self.n) }
+    pub fn to_vec(&self)        -> Vec<E>   { to_vec(&self.n) }
+    pub fn rev(&self)           -> List<E>  { List { n: rev(&self.n) } }
 }
 
 fn drop_next<E>(n: &mut N<E>) -> Option<N<E>> {
@@ -119,7 +128,7 @@ fn drop_next<E>(n: &mut N<E>) -> Option<N<E>> {
     }
 }
 
-impl<E> Drop for List<E> {
+impl<E: Clone> Drop for List<E> {
     fn drop(&mut self) {
         let mut n   = drop_next(&mut self.n);
         loop {
@@ -193,7 +202,7 @@ mod tests {
         assert_eq!(l.len(), 50000);
 
         let list_elems = l.to_vec();
-        for i in 0..500 {
+        for i in 0..50000 {
             assert_eq!(list_elems[l.len() - 1 - i], elements[i]);
         }
     }

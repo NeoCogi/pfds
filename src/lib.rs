@@ -31,7 +31,9 @@
 mod set;
 mod map;
 mod list;
+mod queue;
 
 pub use set::*;
 pub use map::*;
 pub use list::*;
+pub use queue::*;
