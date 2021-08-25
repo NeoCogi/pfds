@@ -29,7 +29,6 @@
 //
 use std::sync::Arc;
 
-#[derive(Clone)]
 enum ListNode<E> {
     Nil,
     Node(usize, E, Arc<ListNode<E>>),
@@ -63,20 +62,6 @@ fn top<E>(l: &N<E>) -> &E {
     }
 }
 
-fn rev<E: Clone>(l: &N<E>) -> N<E> {
-    let mut n = empty();
-    let mut s = l;
-    loop {
-        match s.as_ref() {
-            Nil => return n,
-            Node(_, e, l) => {
-                n = push(&n, e.clone());
-                s = l;
-            }
-        }
-    }
-}
-
 fn len<E>(l: &N<E>) -> usize {
     match l.as_ref() {
         Nil => 0,
@@ -94,6 +79,20 @@ fn to_vec<E: Clone>(l: &N<E>) -> Vec<E> {
                 v.push(e.clone());
                 n = l;
             },
+        }
+    }
+}
+
+fn rev<E: Clone>(l: &N<E>) -> N<E> {
+    let mut n = empty();
+    let mut s = l;
+    loop {
+        match s.as_ref() {
+            Nil => return n,
+            Node(_, e, l) => {
+                n = push(&n, e.clone());
+                s = l;
+            }
         }
     }
 }

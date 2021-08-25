@@ -32,8 +32,20 @@ mod set;
 mod map;
 mod list;
 mod queue;
+mod hashset;
+mod hashmap;
 
 pub use set::*;
 pub use map::*;
 pub use list::*;
 pub use queue::*;
+pub use hashset::*;
+pub use hashmap::*;
+
+pub(crate) const TRIE_BITS : u32 = 4;
+pub(crate) const TRIE_SIZE : usize = 1 << TRIE_BITS;
+pub(crate) const TRIE_MASK : usize = TRIE_SIZE - 1;
+
+pub trait Hashable {
+    fn hash(&self) -> usize;
+}

@@ -327,29 +327,32 @@ mod tests {
         let mut hs      = std::collections::hash_set::HashSet::new();
         let mut numbers = Vec::new();
         for _ in 0..10000 {
-            hs.insert(rand());
+            hs.insert(rand() % 10000);
         }
 
         for i in hs.iter() {
-            numbers.push(i);
+            numbers.push(*i);
         }
 
         let mut n   = Set::empty();
-        let numbers2 = numbers.clone();
-        for i in numbers {
-            n   = n.insert(i);
+        for i in numbers.iter() {
+            n   = n.insert(*i);
         }
+
+        assert_eq!(n.size(), hs.len());
 
         let mut hs = hs.clone();
 
-        for i in 0..5000 {
-            hs.remove(numbers2[i]);
-            n = n.remove(numbers2[i]);
+        for i in 0..hs.len() / 2 {
+            hs.remove(&numbers[i]);
+            n = n.remove(numbers[i]);
         }
+
+        assert_eq!(n.size(), hs.len());
 
         let mut sorted  = Vec::new();
         for i in hs.iter() {
-            sorted.push(i);
+            sorted.push(*i);
         }
         sorted.sort();
 
@@ -361,7 +364,7 @@ mod tests {
             assert_eq!(v[i], sorted[i]);
         }
 
-        assert_eq!(n.find(numbers2[0]).is_none(), true);
-        assert_eq!(n.to_vec().len(), 5000);
+        assert_eq!(n.find(numbers[0]).is_none(), true);
+        assert_eq!(n.to_vec().len(), hs.len());
     }
 }
