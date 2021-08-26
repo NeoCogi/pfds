@@ -152,13 +152,13 @@ impl<K: Ord + Clone, V: Clone> MapNode<K, V> {
         }
     }
 
-    fn find(t: &N<K, V>, k: K) -> Option<&N<K, V>> {
-        match t.as_ref() {
+    fn find(&self, k: K) -> Option<&V> {
+        match self {
             Empty                       => None,
-            One(k2, _) if k == k2.clone()  => Some(t),
+            One(k2, v) if k == k2.clone()  => Some(v),
             One(_, _)                      => None,
             Node(_, l, k2, _, _)   if k < k2.clone()   => S::find(l, k),
-            Node(_, _, k2, _, _)   if k == k2.clone()  => Some(t),
+            Node(_, _, k2, v, _)   if k == k2.clone()  => Some(v),
             Node(_, _, k2, _, r)   if k > k2.clone()   => S::find(r, k),
             _                           => unreachable!()
         }
@@ -193,8 +193,19 @@ pub struct Map<K: Ord + Clone, V: Clone> {
 }
 
 impl<K: Ord + Clone, V: Clone> Map<K, V> {
+    ///
+    /// create and return a new empty map
+    ///
     pub fn empty()              -> Self { Self { n: S::empty(), size: 0 } }
+
+    ///
+    /// create and return a new map containing the new key, value pair
+    ///
     pub fn insert(&self, k: K, v: V)  -> Self { Self { n: S::insert(&self.n, k, v), size: self.size + 1 } }
+
+    ///
+    /// create and return a new map with the key, value pair removed
+    ///
     pub fn remove(&self, k: K)  -> Self {
         let size = match S::find(&self.n, k.clone()) {
             Some(_)     => self.size - 1,
@@ -203,19 +214,41 @@ impl<K: Ord + Clone, V: Clone> Map<K, V> {
         let n = S::remove(&self.n, k);
         Self { n, size }
     }
-    pub fn find(&self, k: K)    -> Option<Self> {
+
+    ///
+    /// search for a key and return true if the key exist, false otherwise
+    ///
+    pub fn exist(&self, k: K)    -> bool {
         let n = S::find(&self.n, k);
         match n {
-            Some(n)     => Some(Self { n: n.clone(), size: self.size }),
-            None        => None
+            Some(_)     => true,
+            None        => false
         }
     }
+
+    ///
+    /// search for a key and return a pointer to the value if the key exists, None otherwise
+    ///
+    pub fn find(&self, k: K)    -> Option<&V> {
+        S::find(&self.n, k)
+    }
+
+    ///
+    /// walk the list/stack and build a vector of keys and return it
+    ///
     pub fn to_vec(&self)        -> Vec<(K, V)> {
         let mut v   = Vec::new();
         S::to_vec(&self.n, &mut v); v
     }
 
+    ///
+    /// return the maximum tree height
+    ///
     pub fn height(&self)        -> usize { self.n.height() }
+
+    ///
+    /// return the number of elements in the set
+    ///
     pub fn len(&self)           -> usize { self.size }
 }
 

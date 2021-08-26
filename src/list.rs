@@ -103,12 +103,40 @@ pub struct List<E: Clone> {
 }
 
 impl<E: Clone> List<E> {
+    ///
+    /// create and return a new empty list/stack
+    ///
     pub fn empty()              -> Self { Self { n: empty() } }
+
+    ///
+    /// create and return a new list/stack with the new element added as the top element
+    ///
     pub fn push(&self, e: E)    -> Self { Self { n: push(&self.n, e) } }
+
+    ///
+    /// create and return a new list/stack with the top element removed.
+    /// This actually creates a thin wrapper around the next element in the list
+    ///
     pub fn pop(&self)           -> Self { Self { n: pop(&self.n) } }
+
+    ///
+    /// return a reference to the top element of the list/stack
+    ///
     pub fn top(&self)           -> &E   { top(&self.n) }
+
+    ///
+    /// return the length of the current list/stack
+    ///
     pub fn len(&self)           -> usize{ len(&self.n) }
+
+    ///
+    /// walk the list/stack and build a vector and returns it (top element first)
+    ///
     pub fn to_vec(&self)        -> Vec<E>   { to_vec(&self.n) }
+
+    ///
+    /// create an return a new list/stack that is the reverse of the current list
+    ///
     pub fn rev(&self)           -> List<E>  { List { n: rev(&self.n) } }
 }
 

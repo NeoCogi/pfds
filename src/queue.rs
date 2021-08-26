@@ -103,15 +103,34 @@ pub struct Queue<E: Clone> {
 }
 
 impl<E: Clone> Queue<E> {
+    ///
+    /// create and return a new empty queue
+    ///
     pub fn empty()                  -> Self         { Self { n: empty() } }
-    pub fn enqueue(&self, e: E)     -> Self         { Self { n: enqueue(&self.n, e) } }
-    pub fn len(&self)               -> usize        { len(&self.n) }
 
+
+    ///
+    /// create and return a new queue with the new element at the end
+    ///
+    pub fn enqueue(&self, e: E)     -> Self         { Self { n: enqueue(&self.n, e) } }
+
+    ///
+    /// create a new queue with the oldest element removed and returned
+    ///
     pub fn dequeue(&self)           -> (E, Self)    {
         let (e, n) = dequeue(&self.n);
         (e, Self { n })
     }
-    pub fn to_vec(&self)            -> Vec<E>   { to_vec(&self.n) }
+
+    ///
+    /// return the length of the current queue
+    ///
+    pub fn len(&self)               -> usize        { len(&self.n) }
+
+    ///
+    /// walk the queue and build a vector and return it (oldest elements first)
+    ///
+    pub fn to_vec(&self)            -> Vec<E>       { to_vec(&self.n) }
 }
 
 #[cfg(test)]

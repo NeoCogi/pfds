@@ -96,14 +96,14 @@ impl<K: Hashable + Eq + Clone> HashSetNode<K> {
         }
     }
 
-    fn exists(h: &N<K>, l: u32, k: K) -> bool {
+    fn exist(h: &N<K>, l: u32, k: K) -> bool {
         let kh  = k.hash();
         let idx = kh.wrapping_shr(l) & TRIE_MASK;
 
         match h {
             Empty       => false,
             One(hh, k2) => kh == *hh && k == *k2,
-            Node(_, slice) => N::exists(&slice[idx], l + TRIE_BITS, k)
+            Node(_, slice) => N::exist(&slice[idx], l + TRIE_BITS, k)
         }
     }
 
@@ -159,7 +159,14 @@ pub struct HashSet<K: Hashable + Eq + Clone> {
 }
 
 impl<K: Hashable + Eq + Clone> HashSet<K> {
+    ///
+    /// create and return a new empty set
+    ///
     pub fn empty()              -> Self { Self { n: N::empty(), count: 0 } }
+
+    ///
+    /// insert a new key and return a new set with the new element added to it
+    ///
     pub fn insert(&self, k: K)  -> Self {
         let n = N::insert(self.n.as_ref(), 0, k);
         match n {
@@ -167,6 +174,10 @@ impl<K: Hashable + Eq + Clone> HashSet<K> {
             None => Self { n: self.n.clone(), count: self.count }
         }
     }
+
+    ///
+    /// remove a key and return a new set with the element removed to it
+    ///
     pub fn remove(&self, k: K)  -> Self     {
         let n = N::remove(self.n.as_ref(), 0, k);
         match n {
@@ -174,10 +185,18 @@ impl<K: Hashable + Eq + Clone> HashSet<K> {
             None => Self { n: self.n.clone(), count: self.count }
         }
     }
-    pub fn len(&self)           -> usize    { self.count }
-    pub fn exists(&self, k: K)  -> bool     { N::exists(self.n.as_ref(), 0, k) }
+
+    ///
+    /// walk the list/stack and build a vector of keys and return it
+    ///
+    pub fn exist(&self, k: K)   -> bool     { N::exist(self.n.as_ref(), 0, k) }
 
     pub fn to_vec(&self)        -> Vec<K>   { self.n.to_vec() }
+
+    ///
+    /// return the number of elements in the set
+    ///
+    pub fn len(&self)           -> usize    { self.count }
 }
 
 #[cfg(test)]
@@ -210,7 +229,7 @@ mod tests {
         assert_eq!(n.len(), 8);
 
         for i in 0..numbers.len() {
-            assert_eq!(n.exists(numbers[i]), true);
+            assert_eq!(n.exist(numbers[i]), true);
         }
     }
 
@@ -225,12 +244,12 @@ mod tests {
         assert_eq!(n.len(), 8);
 
         for i in 0..numbers.len() {
-            assert_eq!(n.exists(numbers[i]), true);
+            assert_eq!(n.exist(numbers[i]), true);
         }
 
         for i in numbers {
             n = n.remove(i);
-            assert_eq!(n.exists(i), false);
+            assert_eq!(n.exist(i), false);
         }
     }
 
@@ -251,7 +270,7 @@ mod tests {
         assert_eq!(n.len(), sorted.len());
 
         for i in 0..numbers.len() {
-            assert_eq!(n.exists(numbers[i]), true);
+            assert_eq!(n.exist(numbers[i]), true);
         }
 
         let mut v = n.to_vec();
@@ -279,7 +298,7 @@ mod tests {
         assert_eq!(n.len(), sorted.len());
 
         for i in 0..numbers.len() {
-            assert_eq!(n.exists(numbers[i]), true);
+            assert_eq!(n.exist(numbers[i]), true);
         }
 
         let mut v = n.to_vec();
@@ -287,7 +306,7 @@ mod tests {
         assert_eq!(v.len(), sorted.len());
         for i in sorted {
             n = n.remove(i);
-            assert_eq!(n.exists(i), false);
+            assert_eq!(n.exist(i), false);
         }
 
         assert_eq!(n.len(), 0);

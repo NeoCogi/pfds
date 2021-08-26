@@ -188,8 +188,19 @@ pub struct Set<K: Ord + Clone> {
 }
 
 impl<K: Ord + Clone> Set<K> {
+    ///
+    /// create and return a new empty set
+    ///
     pub fn empty()              -> Self { Self { n: empty(), size: 0 } }
+
+    ///
+    /// insert a new key and return a new set with the new element added to it
+    ///
     pub fn insert(&self, k: K)  -> Self { Self { n: insert(&self.n, k), size: self.size + 1 } }
+
+    ///
+    /// remove a key and return a new set with the element removed to it
+    ///
     pub fn remove(&self, k: K)  -> Self {
         let size = match find(&self.n, k.clone()) {
             Some(_)     => self.size - 1,
@@ -198,18 +209,34 @@ impl<K: Ord + Clone> Set<K> {
         let n = remove(&self.n, k);
         Self { n, size }
     }
-    pub fn find(&self, k: K)    -> Option<Self> {
+
+    ///
+    /// search for a key and return true if the key exist, false otherwise
+    ///
+    pub fn exist(&self, k: K)    -> bool {
         let n = find(&self.n, k);
         match n {
-            Some(n)     => Some(Self { n: n.clone(), size: self.size }),
-            None        => None
+            Some(_)     => true,
+            None        => false
         }
     }
+
+    ///
+    /// walk the list/stack and build a vector of keys and return it
+    ///
     pub fn to_vec(&self)        -> Vec<K> {
         let mut v   = Vec::new();
         to_vec(&self.n, &mut v); v
     }
+
+    ///
+    /// return the maximum tree height
+    ///
     pub fn height(&self)        -> usize { self.n.height() }
+
+    ///
+    /// return the number of elements in the set
+    ///
     pub fn len(&self)           -> usize { self.size }
 }
 
@@ -252,8 +279,8 @@ mod tests {
             n   = n.insert(i);
         }
 
-        assert_eq!(n.find(10).is_some(), true);
-        assert_eq!(n.find(11).is_none(), true);
+        assert_eq!(n.exist(10), true);
+        assert_eq!(n.exist(11), true);
     }
 
     #[test]
@@ -283,12 +310,12 @@ mod tests {
         let mut n   = Set::empty();
         n   = n.insert(10);
 
-        assert_eq!(n.find(5).is_none(), true);
+        assert_eq!(n.exist(5), false);
         n   = n.remove(5);
 
-        assert_eq!(n.find(10).is_some(), true);
+        assert_eq!(n.exist(10), false);
         n   = n.remove(10);
-        assert_eq!(n.find(10).is_none(), true);
+        assert_eq!(n.exist(10), false);
 
         let v = n.to_vec();
         assert_eq!(v.len(), 0);
@@ -364,7 +391,7 @@ mod tests {
             assert_eq!(v[i], sorted[i]);
         }
 
-        assert_eq!(n.find(numbers[0]).is_none(), true);
+        assert_eq!(n.exist(numbers[0]), false);
         assert_eq!(n.to_vec().len(), hs.len());
     }
 }
