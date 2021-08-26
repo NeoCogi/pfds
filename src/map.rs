@@ -31,149 +31,153 @@
 use std::sync::Arc;
 
 #[derive(Clone)]
-enum MapNode<K: Clone, V> {
+enum MapNode<K: Clone, V: Clone> {
     Empty,
-    One(K, Arc<V>),
-    Node(usize, Arc<MapNode<K, V>>, K, Arc<V>, Arc<MapNode<K, V>>),
+    One(K, V),
+    Node(usize, Arc<MapNode<K, V>>, K, V, Arc<MapNode<K, V>>),
 }
 
 use MapNode::*;
-type N<K, V>   = Arc<MapNode<K, V>>;
 
-fn empty    <K: Clone, V>()                                    -> N<K, V> { N::new(Empty) }
-fn one      <K: Clone, V>(k: K, v: &Arc<V>)                    -> N<K, V> { N::new(One(k, v.clone())) }
-fn node     <K: Clone, V>(h: usize, l: &N<K, V>, k: K, v: &Arc<V>, r: &N<K, V>)    -> N<K, V> { N::new(Node(h, l.clone(), k, v.clone(), r.clone())) }
+type S<K, V>    = MapNode<K, V>;
+type N<K, V>    = Arc<MapNode<K, V>>;
 
-fn make<K: Clone, V>(l: &N<K, V>, k: K, v: &Arc<V>, r: &N<K, V>) -> N<K, V> {
-    match (l.as_ref(), r.as_ref()) {
-        (Empty, Empty) => one(k, v),
-        _ => {
-            let h   = 1 + usize::max(l.height(), r.height());
-            node(h, l, k, v, r)
+impl<K: Ord + Clone, V: Clone> MapNode<K, V> {
+    fn empty    ()              -> N<K, V> { N::new(Empty) }
+    fn one      (k: K, v: V)    -> N<K, V> { N::new(One(k, v.clone())) }
+    fn node     (h: usize, l: &N<K, V>, k: K, v: V, r: &N<K, V>)    -> N<K, V> { N::new(Node(h, l.clone(), k, v.clone(), r.clone())) }
+
+    fn make(l: &N<K, V>, k: K, v: V, r: &N<K, V>) -> N<K, V> {
+        match (l.as_ref(), r.as_ref()) {
+            (Empty, Empty) => S::one(k, v),
+            _ => {
+                let h   = 1 + usize::max(l.height(), r.height());
+                S::node(h, l, k, v, r)
+            }
         }
     }
-}
 
-fn rebalance<K: Clone, V>(t1: &N<K, V>, k: K, v: &Arc<V>, t2: &N<K, V>) -> N<K, V> {
-    let t1h = t1.height();
-    let t2h = t2.height();
+    fn rebalance(t1: &N<K, V>, k: K, v: V, t2: &N<K, V>) -> N<K, V> {
+        let t1h = t1.height();
+        let t2h = t2.height();
 
-    if t2h > t1h + 2 {
-        match t2.as_ref() {
-            Node(_, t2l, t2k, t2v, t2r) => {
-                if t2l.height() > t1h + 1 {
-                    match t2l.as_ref() {
-                        Node(_, t2ll, t2lk, t2lv, t2lr) => make(&make(t1, k, v, t2ll), t2lk.clone(), t2lv, &make(t2lr, t2k.clone(), t2v, t2r)),
-                        _ => unreachable!()
-                    }
-                } else {
-                    make(&make(t1, k, v, t2l), t2k.clone(), t2v, t2r)
-                }
-            },
-            _ => unreachable!()
-        }
-    } else {
-        if t1h > t2h + 2 {
-            match t1.as_ref() {
-                Node(_, t1l, t1k, t1v, t1r) => {
-                    if t1r.height() > t2h + 1 {
-                        match t1r.as_ref() {
-                            Node(_, t1rl, t1rk, t1rv, t1rr) => make(&make(t1l, t1k.clone(), t1v, t1rl), t1rk.clone(), t1rv, &make(t1rr, k, v, t2)),
+        if t2h > t1h + 2 {
+            match t2.as_ref() {
+                Node(_, t2l, t2k, t2v, t2r) => {
+                    if t2l.height() > t1h + 1 {
+                        match t2l.as_ref() {
+                            Node(_, t2ll, t2lk, t2lv, t2lr) => S::make(&S::make(t1, k, v, t2ll), t2lk.clone(), t2lv.clone(), &S::make(t2lr, t2k.clone(), t2v.clone(), t2r)),
                             _ => unreachable!()
                         }
                     } else {
-                        make(t1l, t1k.clone(), t1v, &make(t1r, k, v, t2))
+                        S::make(&S::make(t1, k, v, t2l), t2k.clone(), t2v.clone(), t2r)
                     }
                 },
                 _ => unreachable!()
             }
         } else {
-            make(t1, k, v, t2)
+            if t1h > t2h + 2 {
+                match t1.as_ref() {
+                    Node(_, t1l, t1k, t1v, t1r) => {
+                        if t1r.height() > t2h + 1 {
+                            match t1r.as_ref() {
+                                Node(_, t1rl, t1rk, t1rv, t1rr) => S::make(&S::make(t1l, t1k.clone(), t1v.clone(), t1rl), t1rk.clone(), t1rv.clone(), &S::make(t1rr, k, v, t2)),
+                                _ => unreachable!()
+                            }
+                        } else {
+                            S::make(t1l, t1k.clone(), t1v.clone(), &S::make(t1r, k, v, t2))
+                        }
+                    },
+                    _ => unreachable!()
+                }
+            } else {
+                S::make(t1, k, v, t2)
+            }
         }
     }
-}
 
-fn insert<K: Ord + Clone, V>(t: &N<K, V>, k: K, v: &Arc<V>) -> N<K, V> {
-    match t.as_ref() {
-        Node(_, l, k2, v2, r)   if k < k2.clone()   => rebalance(&insert(l, k, v), k2.clone(), v2, r),
-        Node(h, l, k2, v2, r)   if k == k2.clone()  => node(*h, l, k2.clone(), v2, r),
-        Node(_, l, k2, v2, r)   if k > k2.clone()   => rebalance(l, k2.clone(), v2, &insert(r, k, v)),
+    fn insert(t: &N<K, V>, k: K, v: V) -> N<K, V> {
+        match t.as_ref() {
+            Node(_, l, k2, v2, r)   if k < k2.clone()   => S::rebalance(&S::insert(l, k, v), k2.clone(), v2.clone(), r),
+            Node(h, l, k2, v2, r)   if k == k2.clone()  => S::node(*h, l, k2.clone(), v2.clone(), r),
+            Node(_, l, k2, v2, r)   if k > k2.clone()   => S::rebalance(l, k2.clone(), v2.clone(), &S::insert(r, k, v)),
 
-        One(k2, v2)             if k < k2.clone()   => node(2, &empty(), k, v, &one(k2.clone(), v2)),
-        One(k2, v2)             if k == k2.clone()  => one(k2.clone(), v2),
-        One(k2, v2)             if k > k2.clone()   => node(2, &one(k2.clone(), v2), k, v, &empty()),
+            One(k2, v2)             if k < k2.clone()   => S::node(2, &S::empty(), k, v, &S::one(k2.clone(), v2.clone())),
+            One(k2, v2)             if k == k2.clone()  => S::one(k2.clone(), v2.clone()),
+            One(k2, v2)             if k > k2.clone()   => S::node(2, &S::one(k2.clone(), v2.clone()), k, v, &S::empty()),
 
-        Empty                                       => one(k, v),
-        _                                           => unreachable!()
+            Empty                                       => S::one(k, v),
+            _                                           => unreachable!()
+        }
     }
-}
 
-fn splice_out_successor<K: Clone, V>(t: &N<K, V>) -> (K, Arc<V>, N<K, V>) {
-    match t.as_ref() {
-        Empty   => panic!("internal error"),
-        One(k2, v2) => (k2.clone(), v2.clone(), empty()),
-        Node(_, l, k2, v2, r) => {
-            let l1 = l.clone();
-            let r1 = r.clone();
-            match l.as_ref() {
-                Empty   => (k2.clone(), v2.clone(), r1),
-                _ => {
-                    let (k3, v3, ll) = splice_out_successor(&l1);
-                    (k3, v3.clone(), make(&ll, k2.clone(), v2, r))
+    fn splice_out_successor(t: &N<K, V>) -> (K, V, N<K, V>) {
+        match t.as_ref() {
+            Empty   => panic!("internal error"),
+            One(k2, v2) => (k2.clone(), v2.clone(), S::empty()),
+            Node(_, l, k2, v2, r) => {
+                let l1 = l.clone();
+                let r1 = r.clone();
+                match l.as_ref() {
+                    Empty   => (k2.clone(), v2.clone(), r1),
+                    _ => {
+                        let (k3, v3, ll) = S::splice_out_successor(&l1);
+                        (k3, v3.clone(), S::make(&ll, k2.clone(), v2.clone(), r))
+                    }
                 }
+            }
+        }
+    }
+
+    fn remove(t: &N<K, V>, k: K) -> N<K, V> {
+        match t.as_ref() {
+            Empty                                       => S::empty(),
+            One(k2, _)              if k == k2.clone()  => S::empty(),
+            One(k2, v2)                                 => S::one(k2.clone(), v2.clone()),
+            Node(_, l, k2, v2, r)   if k < k2.clone()   => S::rebalance(&S::remove(l, k), k2.clone(), v2.clone(), r),
+            Node(_, l, k2, _, r)    if k == k2.clone()  => {
+                let l1 = l.clone();
+                let r1 = r.clone();
+                match (l.as_ref(), r.as_ref()) {
+                    (Empty, _)  => r1,
+                    (_, Empty)  => l1,
+                    _           => {
+                        let (sk, sv, rr) = S::splice_out_successor(&r1);
+                        S::make(&l1, sk, sv, &rr)
+                    }
+                }
+            },
+            Node(_, l, k2, v2, r)   if k > k2.clone()   => S::rebalance(l, k2.clone(), v2.clone(), &S::remove(r, k)),
+            _ => unreachable!()
+        }
+    }
+
+    fn find(t: &N<K, V>, k: K) -> Option<&N<K, V>> {
+        match t.as_ref() {
+            Empty                       => None,
+            One(k2, _) if k == k2.clone()  => Some(t),
+            One(_, _)                      => None,
+            Node(_, l, k2, _, _)   if k < k2.clone()   => S::find(l, k),
+            Node(_, _, k2, _, _)   if k == k2.clone()  => Some(t),
+            Node(_, _, k2, _, r)   if k > k2.clone()   => S::find(r, k),
+            _                           => unreachable!()
+        }
+    }
+
+    fn to_vec(t: &N<K, V>, vec: &mut Vec<(K, V)>) {
+        match t.as_ref() {
+            Empty                   => (),
+            One(k, v)                  => vec.push((k.clone(), v.clone())),
+            Node(_, l, k, v, r)        => {
+                S::to_vec(l, vec);
+                vec.push((k.clone(), v.clone()));
+                S::to_vec(r, vec);
             }
         }
     }
 }
 
-fn remove<K: Ord + Clone, V>(t: &N<K, V>, k: K) -> N<K, V> {
-    match t.as_ref() {
-        Empty                                   => empty(),
-        One(k2, _)              if k == k2.clone()  => empty(),
-        One(k2, v2)                                 => one(k2.clone(), v2),
-        Node(_, l, k2, v2, r)   if k < k2.clone()   => rebalance(&remove(l, k), k2.clone(), v2, r),
-        Node(_, l, k2, _, r)    if k == k2.clone()  => {
-            let l1 = l.clone();
-            let r1 = r.clone();
-            match (l.as_ref(), r.as_ref()) {
-                (Empty, _)  => r1,
-                (_, Empty)  => l1,
-                _           => {
-                    let (sk, sv, rr) = splice_out_successor(&r1);
-                    make(&l1, sk, &sv, &rr)
-                }
-            }
-        },
-        Node(_, l, k2, v2, r)   if k > k2.clone()   => rebalance(l, k2.clone(), v2, &remove(r, k)),
-        _ => unreachable!()
-    }
-}
-
-fn find<K: Ord + Clone, V>(t: &N<K, V>, k: K) -> Option<&N<K, V>> {
-    match t.as_ref() {
-        Empty                       => None,
-        One(k2, _) if k == k2.clone()  => Some(t),
-        One(_, _)                      => None,
-        Node(_, l, k2, _, _)   if k < k2.clone()   => find(l, k),
-        Node(_, _, k2, _, _)   if k == k2.clone()  => Some(t),
-        Node(_, _, k2, _, r)   if k > k2.clone()   => find(r, k),
-        _                           => unreachable!()
-    }
-}
-
-fn to_vec<K: Ord + Clone, V>(t: &N<K, V>, vec: &mut Vec<(K, Arc<V>)>) {
-    match t.as_ref() {
-        Empty                   => (),
-        One(k, v)                  => vec.push((k.clone(), v.clone())),
-        Node(_, l, k, v, r)        => {
-            to_vec(l, vec);
-            vec.push((k.clone(), v.clone()));
-            to_vec(r, vec);
-        }
-    }
-}
-
-impl<K : Clone, V> MapNode<K, V> {
+impl<K : Clone, V: Clone> MapNode<K, V> {
     fn height(&self) -> usize {
         match self {
             Empty               => 0,
@@ -183,32 +187,32 @@ impl<K : Clone, V> MapNode<K, V> {
     }
 }
 
-pub struct Map<K: Ord + Clone, V> {
+pub struct Map<K: Ord + Clone, V: Clone> {
     size: usize,
     n   : N<K, V>,
 }
 
-impl<K: Ord + Clone, V> Map<K, V> {
-    pub fn empty()              -> Self { Self { n: empty(), size: 0 } }
-    pub fn insert(&self, k: K, v: V)  -> Self { Self { n: insert(&self.n, k, &Arc::new(v)), size: self.size + 1 } }
+impl<K: Ord + Clone, V: Clone> Map<K, V> {
+    pub fn empty()              -> Self { Self { n: S::empty(), size: 0 } }
+    pub fn insert(&self, k: K, v: V)  -> Self { Self { n: S::insert(&self.n, k, v), size: self.size + 1 } }
     pub fn remove(&self, k: K)  -> Self {
-        let size = match find(&self.n, k.clone()) {
+        let size = match S::find(&self.n, k.clone()) {
             Some(_)     => self.size - 1,
             None        => self.size
         };
-        let n = remove(&self.n, k);
+        let n = S::remove(&self.n, k);
         Self { n, size }
     }
     pub fn find(&self, k: K)    -> Option<Self> {
-        let n = find(&self.n, k);
+        let n = S::find(&self.n, k);
         match n {
             Some(n)     => Some(Self { n: n.clone(), size: self.size }),
             None        => None
         }
     }
-    pub fn to_vec(&self)        -> Vec<(K, Arc<V>)> {
+    pub fn to_vec(&self)        -> Vec<(K, V)> {
         let mut v   = Vec::new();
-        to_vec(&self.n, &mut v); v
+        S::to_vec(&self.n, &mut v); v
     }
 
     pub fn height(&self)        -> usize { self.n.height() }
@@ -243,7 +247,7 @@ mod tests {
 
         for i in 0..v.len() {
             assert_eq!(v[i].0, sorted[i]);
-            assert_eq!(*v[i].1, sorted[i]);
+            assert_eq!(v[i].1, sorted[i]);
         }
     }
 
@@ -278,7 +282,7 @@ mod tests {
 
         for i in 0..v.len() {
             assert_eq!(v[i].0, sorted[i]);
-            assert_eq!(*v[i].1, sorted[i]);
+            assert_eq!(v[i].1, sorted[i]);
         }
     }
 
@@ -323,7 +327,7 @@ mod tests {
 
         for i in 0..v.len() {
             assert_eq!(v[i].0, sorted[i]);
-            assert_eq!(*v[i].1, sorted[i]);
+            assert_eq!(v[i].1, sorted[i]);
         }
     }
 
@@ -367,7 +371,7 @@ mod tests {
 
         for i in 0..v.len() {
             assert_eq!(v[i].0, sorted[i]);
-            assert_eq!(*v[i].1, sorted[i]);
+            assert_eq!(v[i].1, sorted[i]);
         }
 
         assert_eq!(n.find(numbers[0]).is_none(), true);
