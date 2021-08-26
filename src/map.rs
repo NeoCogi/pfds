@@ -216,7 +216,7 @@ impl<K: Ord + Clone, V: Clone> Map<K, V> {
     }
 
     pub fn height(&self)        -> usize { self.n.height() }
-    pub fn size(&self)          -> usize { self.size }
+    pub fn len(&self)           -> usize { self.size }
 }
 
 #[cfg(test)]
@@ -348,7 +348,7 @@ mod tests {
             n   = n.insert(*i, *i);
         }
 
-        assert_eq!(n.size(), hs.len());
+        assert_eq!(n.len(), hs.len());
 
         let mut hs = hs.clone();
 
@@ -357,7 +357,7 @@ mod tests {
             n = n.remove(numbers[i]);
         }
 
-        assert_eq!(n.size(), hs.len());
+        assert_eq!(n.len(), hs.len());
 
         let mut sorted  = Vec::new();
         for i in hs.iter() {

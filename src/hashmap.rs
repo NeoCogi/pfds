@@ -97,14 +97,26 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMapNode<K, V> {
         }
     }
 
-    fn exists(h: &N<K, V>, l: u32, k: K) -> bool {
+    fn exists(h: &N<K, V>, l: u32, k: &K) -> bool {
         let kh  = k.hash();
         let idx = kh.wrapping_shr(l) & TRIE_MASK;
 
         match h {
             Empty       => false,
-            One(hh, k2, _) => kh == *hh && k == *k2,
+            One(hh, k2, _) => kh == *hh && k == k2,
             Node(_, slice) => N::exists(&slice[idx], l + TRIE_BITS, k)
+        }
+    }
+
+    fn find(&self, l: u32, k: &K) -> Option<&V> {
+        let kh  = k.hash();
+        let idx = kh.wrapping_shr(l) & TRIE_MASK;
+
+        match self {
+            Empty       => None,
+            One(hh, k2, v) if kh == *hh && k == k2 => Some(v),
+            One(_, _, _) => None,
+            Node(_, slice) => slice[idx].find(l + TRIE_BITS, k)
         }
     }
 
@@ -176,7 +188,8 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMap<K, V> {
         }
     }
     pub fn len(&self)           -> usize    { self.count }
-    pub fn exists(&self, k: K)  -> bool     { N::exists(self.n.as_ref(), 0, k) }
+    pub fn exists(&self, k: &K) -> bool     { N::exists(self.n.as_ref(), 0, k) }
+    pub fn find(&self, k: &K)   -> Option<&V>   { self.n.as_ref().find(0, k) }
 
     pub fn to_vec(&self)        -> Vec<(K, V)>  { self.n.to_vec() }
 }
@@ -206,7 +219,7 @@ mod tests {
         assert_eq!(n.len(), 8);
 
         for i in 0..numbers.len() {
-            assert_eq!(n.exists(numbers[i]), true);
+            assert_eq!(n.exists(&numbers[i]), true);
         }
     }
 
@@ -221,12 +234,12 @@ mod tests {
         assert_eq!(n.len(), 8);
 
         for i in 0..numbers.len() {
-            assert_eq!(n.exists(numbers[i]), true);
+            assert_eq!(n.exists(&numbers[i]), true);
         }
 
         for i in numbers {
             n = n.remove(i);
-            assert_eq!(n.exists(i), false);
+            assert_eq!(n.exists(&i), false);
         }
     }
 
@@ -247,7 +260,11 @@ mod tests {
         assert_eq!(n.len(), sorted.len());
 
         for i in 0..numbers.len() {
-            assert_eq!(n.exists(numbers[i]), true);
+            assert_eq!(n.exists(&numbers[i]), true);
+            let k = numbers[i];
+
+            assert_eq!(n.find(&k).is_some(), true);
+            assert_eq!(*n.find(&k).unwrap(), k * k);
         }
 
         let mut v = n.to_vec();
@@ -275,7 +292,7 @@ mod tests {
         assert_eq!(n.len(), sorted.len());
 
         for i in 0..numbers.len() {
-            assert_eq!(n.exists(numbers[i]), true);
+            assert_eq!(n.exists(&numbers[i]), true);
         }
 
         let mut v = n.to_vec();
@@ -283,7 +300,7 @@ mod tests {
         assert_eq!(v.len(), sorted.len());
         for i in sorted {
             n = n.remove(i);
-            assert_eq!(n.exists(i), false);
+            assert_eq!(n.exists(&i), false);
         }
 
         assert_eq!(n.len(), 0);
