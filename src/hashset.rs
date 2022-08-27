@@ -27,9 +27,9 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 //
-use std::sync::Arc;
+use crate::{Hashable, TRIE_BITS, TRIE_MASK, TRIE_SIZE};
 use std::mem::*;
-use crate::{Hashable, TRIE_BITS, TRIE_SIZE, TRIE_MASK};
+use std::sync::Arc;
 
 #[derive(Clone)]
 enum HashSetNode<K: Hashable + Eq + Clone> {
@@ -40,36 +40,47 @@ enum HashSetNode<K: Hashable + Eq + Clone> {
 
 use HashSetNode::*;
 
-type N<K>   = HashSetNode<K>;
-type H<K>   = Arc<HashSetNode<K>>;
+type N<K> = HashSetNode<K>;
+type H<K> = Arc<HashSetNode<K>>;
 
 impl<K: Hashable + Eq + Clone> HashSetNode<K> {
-    fn empty()              -> H<K> { H::new(Empty) }
+    fn empty() -> H<K> {
+        H::new(Empty)
+    }
 
-    fn new_empty_slice()    -> [N<K>; TRIE_SIZE] {
-        let mut s : [MaybeUninit<N<K>>; TRIE_SIZE]   = unsafe { MaybeUninit::uninit().assume_init() };
-        for i in 0..TRIE_SIZE {
-            s[i] = MaybeUninit::new(N::Empty);
+    fn new_empty_slice() -> [N<K>; TRIE_SIZE] {
+        let mut s: [MaybeUninit<N<K>>; TRIE_SIZE] = unsafe { MaybeUninit::uninit().assume_init() };
+        for i in s.iter_mut().take(TRIE_SIZE) {
+            *i = MaybeUninit::new(N::Empty);
         }
 
         // TODO: issue: https://github.com/rust-lang/rust/issues/61956
         // use transmute
-        let ptr = &mut s as *mut _ as *mut [N<K>; TRIE_SIZE];
-        let res = unsafe { ptr.read() };
-        forget(s);
-        res
+
+        // let ptr = &mut s as *mut _ as *mut [N<K>; TRIE_SIZE];
+        // let res = unsafe { ptr.read() };
+        // forget(s);
+        // res
+
+        unsafe {
+            (&*(&MaybeUninit::new(s) as *const _ as *const MaybeUninit<_>)).assume_init_read()
+        }
     }
 
     fn insert(h: &N<K>, l: u32, k: K) -> Option<N<K>> {
-        let kh  = k.hash();
+        let kh = k.hash();
         let idx = kh.wrapping_shr(l) & TRIE_MASK;
 
         match h {
-            Empty       => Some(N::One(kh, k)),
-            One(hh, k2) if kh == *hh && k == *k2 => /* (1) */ None,
-            One(kh2, k2)  => {
-                let mut slice   = N::new_empty_slice();
-                slice[idx]  = N::One(kh, k);
+            Empty => Some(N::One(kh, k)),
+            One(hh, k2) if kh == *hh && k == *k2 =>
+            /* (1) */
+            {
+                None
+            }
+            One(kh2, k2) => {
+                let mut slice = N::new_empty_slice();
+                slice[idx] = N::One(kh, k);
                 let idx2 = kh2.wrapping_shr(l) & TRIE_MASK;
                 if idx2 != idx {
                     slice[idx2] = N::One(*kh2, k2.clone());
@@ -78,58 +89,57 @@ impl<K: Hashable + Eq + Clone> HashSetNode<K> {
                 } else {
                     let n = Node(1, Arc::new(slice));
                     match N::insert(&n, l, k2.clone()) {
-                        Some(n2) => Some(n2),   // return the new one
-                        None => Some(n)         // this case should never be exausted: look at (1)
-                    }
-                }
-            },
-            Node(size, slice) => {
-                match N::insert(&slice[idx], l + TRIE_BITS, k) {
-                    None => None,
-                    Some(n) => {
-                        let mut slice2 = slice.as_ref().clone();
-                        slice2[idx] = n;
-                        Some(Node(size + 1, Arc::new(slice2)))
+                        Some(n2) => Some(n2), // return the new one
+                        None => Some(n),      // this case should never be exausted: look at (1)
                     }
                 }
             }
+            Node(size, slice) => match N::insert(&slice[idx], l + TRIE_BITS, k) {
+                None => None,
+                Some(n) => {
+                    let mut slice2 = slice.as_ref().clone();
+                    slice2[idx] = n;
+                    Some(Node(size + 1, Arc::new(slice2)))
+                }
+            },
         }
     }
 
     fn exist(h: &N<K>, l: u32, k: K) -> bool {
-        let kh  = k.hash();
+        let kh = k.hash();
         let idx = kh.wrapping_shr(l) & TRIE_MASK;
 
         match h {
-            Empty       => false,
+            Empty => false,
             One(hh, k2) => kh == *hh && k == *k2,
-            Node(_, slice) => N::exist(&slice[idx], l + TRIE_BITS, k)
+            Node(_, slice) => N::exist(&slice[idx], l + TRIE_BITS, k),
         }
     }
 
     fn remove(h: &N<K>, l: u32, k: K) -> Option<N<K>> {
-        let kh  = k.hash();
+        let kh = k.hash();
         let idx = kh.wrapping_shr(l) & TRIE_MASK;
         match h {
-            Empty       => None,
-            One(hh, k2) if kh == *hh && k == *k2 => /* (1) */ Some(Empty),
-            One(_, _)   => None,
-            Node(size, slice) => {
-                match N::remove(&slice[idx], l + TRIE_BITS, k) {
-                    None    => None,
-                    Some(n) if matches!(n, Empty) && *size == 1 => Some(Empty),
-                    Some(n) => {
-                        let new_size =
-                            match n {
-                                Empty => size - 1,
-                                _ => *size,
-                            };
-                        let mut slice2 = slice.as_ref().clone();
-                        slice2[idx] = n;
-                        Some(Node(new_size, Arc::new(slice2)))
-                    }
-                }
+            Empty => None,
+            One(hh, k2) if kh == *hh && k == *k2 =>
+            /* (1) */
+            {
+                Some(Empty)
             }
+            One(_, _) => None,
+            Node(size, slice) => match N::remove(&slice[idx], l + TRIE_BITS, k) {
+                None => None,
+                Some(n) if matches!(n, Empty) && *size == 1 => Some(Empty),
+                Some(n) => {
+                    let new_size = match n {
+                        Empty => size - 1,
+                        _ => *size,
+                    };
+                    let mut slice2 = slice.as_ref().clone();
+                    slice2[idx] = n;
+                    Some(Node(new_size, Arc::new(slice2)))
+                }
+            },
         }
     }
 
@@ -154,49 +164,86 @@ impl<K: Hashable + Eq + Clone> HashSetNode<K> {
 
 #[derive(Clone)]
 pub struct HashSet<K: Hashable + Eq + Clone> {
-    n       : H<K>,
-    count   : usize,
+    n: H<K>,
+    count: usize,
 }
 
 impl<K: Hashable + Eq + Clone> HashSet<K> {
     ///
     /// create and return a new empty set
     ///
-    pub fn empty()              -> Self { Self { n: N::empty(), count: 0 } }
+    pub fn empty() -> Self {
+        Self {
+            n: N::empty(),
+            count: 0,
+        }
+    }
 
     ///
     /// insert a new key and return a new set with the new element added to it
     ///
-    pub fn insert(&self, k: K)  -> Self {
+    pub fn insert(&self, k: K) -> Self {
         let n = N::insert(self.n.as_ref(), 0, k);
         match n {
-            Some(n) => Self { n: H::new(n), count: self.count + 1 },
-            None => Self { n: self.n.clone(), count: self.count }
+            Some(n) => Self {
+                n: H::new(n),
+                count: self.count + 1,
+            },
+            None => Self {
+                n: self.n.clone(),
+                count: self.count,
+            },
         }
     }
 
     ///
     /// remove a key and return a new set with the element removed to it
     ///
-    pub fn remove(&self, k: K)  -> Self     {
+    pub fn remove(&self, k: K) -> Self {
         let n = N::remove(self.n.as_ref(), 0, k);
         match n {
-            Some(n) => Self { n: H::new(n), count: self.count - 1 },
-            None => Self { n: self.n.clone(), count: self.count }
+            Some(n) => Self {
+                n: H::new(n),
+                count: self.count - 1,
+            },
+            None => Self {
+                n: self.n.clone(),
+                count: self.count,
+            },
         }
     }
 
     ///
     /// walk the list/stack and build a vector of keys and return it
     ///
-    pub fn exist(&self, k: K)   -> bool     { N::exist(self.n.as_ref(), 0, k) }
+    pub fn exist(&self, k: K) -> bool {
+        N::exist(self.n.as_ref(), 0, k)
+    }
 
-    pub fn to_vec(&self)        -> Vec<K>   { self.n.to_vec() }
+    pub fn to_vec(&self) -> Vec<K> {
+        self.n.to_vec()
+    }
+
+    ///
+    /// return true if the set is empty
+    ///
+    pub fn is_true(&self) -> bool {
+        self.count == 0
+    }
+
+    ///
+    /// return true if the set is empty
+    ///
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
 
     ///
     /// return the number of elements in the set
     ///
-    pub fn len(&self)           -> usize    { self.count }
+    pub fn len(&self) -> usize {
+        self.count
+    }
 }
 
 #[cfg(test)]
@@ -207,7 +254,9 @@ mod tests {
 
     mod internal {
         impl crate::Hashable for usize {
-            fn hash(&self) -> usize { *self }
+            fn hash(&self) -> usize {
+                *self
+            }
         }
     }
 
@@ -221,9 +270,9 @@ mod tests {
     #[test]
     fn insert() {
         let numbers = [3, 3, 0x13, 120, 4, 9, 27, 1, 45];
-        let mut n   = HashSet::empty();
+        let mut n = HashSet::empty();
         for i in numbers {
-            n   = n.insert(i);
+            n = n.insert(i);
         }
 
         assert_eq!(n.len(), 8);
@@ -236,9 +285,9 @@ mod tests {
     #[test]
     fn remove() {
         let numbers = [3, 3, 0x13, 120, 4, 9, 27, 1, 45];
-        let mut n   = HashSet::empty();
+        let mut n = HashSet::empty();
         for i in numbers {
-            n   = n.insert(i);
+            n = n.insert(i);
         }
 
         assert_eq!(n.len(), 8);
@@ -256,14 +305,14 @@ mod tests {
     #[test]
     fn insert_1000000() {
         let mut numbers = Vec::new();
-        let mut n   = HashSet::empty();
+        let mut n = HashSet::empty();
         for _ in 0..1000000 {
             let r = rand() % 100000;
-            n   = n.insert(r);
+            n = n.insert(r);
             numbers.push(r);
         }
 
-        let mut sorted  = numbers.clone();
+        let mut sorted = numbers.clone();
         sorted.sort();
         sorted.dedup();
 
@@ -284,14 +333,14 @@ mod tests {
     #[test]
     fn remove_1000000() {
         let mut numbers = Vec::new();
-        let mut n   = HashSet::empty();
+        let mut n = HashSet::empty();
         for _ in 0..1000000 {
             let r = rand() % 100000;
-            n   = n.insert(r);
+            n = n.insert(r);
             numbers.push(r);
         }
 
-        let mut sorted  = numbers.clone();
+        let mut sorted = numbers.clone();
         sorted.sort();
         sorted.dedup();
 

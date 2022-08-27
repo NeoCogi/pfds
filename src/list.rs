@@ -38,8 +38,12 @@ use ListNode::*;
 
 type N<E> = Arc<ListNode<E>>;
 
-fn empty<E> ()                          -> N<E> { Arc::new(Nil) }
-fn node<E>  (s: usize, e: E, l: &N<E>)  -> N<E> { Arc::new(Node(s, e, l.clone())) }
+fn empty<E>() -> N<E> {
+    Arc::new(Nil)
+}
+fn node<E>(s: usize, e: E, l: &N<E>) -> N<E> {
+    Arc::new(Node(s, e, l.clone()))
+}
 
 fn push<E>(l: &N<E>, e: E) -> N<E> {
     match l.as_ref() {
@@ -58,7 +62,7 @@ fn pop<E>(l: &N<E>) -> N<E> {
 fn top<E>(l: &N<E>) -> &E {
     match l.as_ref() {
         Nil => panic!("pop: list is empty"),
-        Node(_, e, _) => &e,
+        Node(_, e, _) => e,
     }
 }
 
@@ -78,7 +82,7 @@ fn to_vec<E: Clone>(l: &N<E>) -> Vec<E> {
             Node(_, e, l) => {
                 v.push(e.clone());
                 n = l;
-            },
+            }
         }
     }
 }
@@ -99,49 +103,72 @@ fn rev<E: Clone>(l: &N<E>) -> N<E> {
 
 #[derive(Clone)]
 pub struct List<E: Clone> {
-    n       : N<E>,
+    n: N<E>,
 }
 
 impl<E: Clone> List<E> {
     ///
     /// create and return a new empty list/stack
     ///
-    pub fn empty()              -> Self { Self { n: empty() } }
+    pub fn empty() -> Self {
+        Self { n: empty() }
+    }
 
     ///
     /// create and return a new list/stack with the new element added as the top element
     ///
-    pub fn push(&self, e: E)    -> Self { Self { n: push(&self.n, e) } }
+    pub fn push(&self, e: E) -> Self {
+        Self {
+            n: push(&self.n, e),
+        }
+    }
 
     ///
     /// create and return a new list/stack with the top element removed.
     /// This actually creates a thin wrapper around the next element in the list
     ///
-    pub fn pop(&self)           -> Self { Self { n: pop(&self.n) } }
+    pub fn pop(&self) -> Self {
+        Self { n: pop(&self.n) }
+    }
 
     ///
     /// return a reference to the top element of the list/stack
     ///
-    pub fn top(&self)           -> &E   { top(&self.n) }
+    pub fn top(&self) -> &E {
+        top(&self.n)
+    }
+
+    ///
+    /// return true if the list/stack is empty
+    ///
+    pub fn is_empty(&self) -> bool {
+        len(&self.n) == 0
+    }
 
     ///
     /// return the length of the current list/stack
     ///
-    pub fn len(&self)           -> usize{ len(&self.n) }
+    pub fn len(&self) -> usize {
+        len(&self.n)
+    }
 
     ///
     /// walk the list/stack and build a vector and returns it (top element first)
     ///
-    pub fn to_vec(&self)        -> Vec<E>   { to_vec(&self.n) }
+    pub fn to_vec(&self) -> Vec<E> {
+        to_vec(&self.n)
+    }
 
     ///
     /// create an return a new list/stack that is the reverse of the current list
     ///
-    pub fn rev(&self)           -> List<E>  { List { n: rev(&self.n) } }
+    pub fn rev(&self) -> List<E> {
+        List { n: rev(&self.n) }
+    }
 }
 
 fn drop_next<E>(n: &mut N<E>) -> Option<N<E>> {
-    let mv  = N::get_mut(n);
+    let mv = N::get_mut(n);
     match mv {
         None => None,
         Some(Nil) => None,
@@ -149,7 +176,7 @@ fn drop_next<E>(n: &mut N<E>) -> Option<N<E>> {
             let old_v = std::mem::replace(v, Nil);
             match old_v {
                 Nil => None,
-                Node(_, _, l) => Some(l)
+                Node(_, _, l) => Some(l),
             }
         }
     }
@@ -157,7 +184,7 @@ fn drop_next<E>(n: &mut N<E>) -> Option<N<E>> {
 
 impl<E: Clone> Drop for List<E> {
     fn drop(&mut self) {
-        let mut n   = drop_next(&mut self.n);
+        let mut n = drop_next(&mut self.n);
         loop {
             match &mut n {
                 Some(v) => n = drop_next(v),
@@ -182,7 +209,7 @@ mod tests {
 
     #[test]
     fn push() {
-        let mut elements    = Vec::new();
+        let mut elements = Vec::new();
         let mut l = List::empty();
         for _ in 0..1000 {
             let e = rand();
@@ -201,14 +228,13 @@ mod tests {
 
     #[test]
     fn pop() {
-        let mut elements    = Vec::new();
+        let mut elements = Vec::new();
         let mut l = List::empty();
         for _ in 0..100000 {
             let e = rand();
             elements.push(e);
             l = l.push(e);
         }
-
 
         assert_eq!(elements.len(), 100000);
         assert_eq!(elements.len(), l.len());
