@@ -90,7 +90,7 @@ impl<K: Hashable + Eq + Clone> HashSetNode<K> {
                     let n = Node(1, Arc::new(slice));
                     match N::insert(&n, l, k2.clone()) {
                         Some(n2) => Some(n2), // return the new one
-                        None => Some(n),      // this case should never be exausted: look at (1)
+                        None => Some(n),      // this case should never be exhausted: look at (1)
                     }
                 }
             }
@@ -183,16 +183,20 @@ impl<K: Hashable + Eq + Clone> HashSet<K> {
     /// insert a new key and return a new set with the new element added to it
     ///
     pub fn insert(&self, k: K) -> Self {
-        let n = N::insert(self.n.as_ref(), 0, k);
+        let n = N::insert(self.n.as_ref(), 0, k.clone());
         match n {
             Some(n) => Self {
                 n: H::new(n),
                 count: self.count + 1,
             },
-            None => Self {
-                n: self.n.clone(),
-                count: self.count,
-            },
+            None => {
+                // the key is already found, overwrite it
+                let n = N::insert(self.remove(k.clone()).n.as_ref(), 0, k).unwrap();
+                Self {
+                    n: H::new(n),
+                    count: self.count,
+                }
+            }
         }
     }
 
@@ -251,14 +255,6 @@ mod tests {
     use crate::hashset::*;
 
     static mut SEED: usize = 777;
-
-    mod internal {
-        impl crate::Hashable for usize {
-            fn hash(&self) -> usize {
-                *self
-            }
-        }
-    }
 
     fn rand() -> usize {
         unsafe {

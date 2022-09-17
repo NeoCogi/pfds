@@ -195,16 +195,20 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMap<K, V> {
     /// create and return a new map containing the new key, value pair
     ///
     pub fn insert(&self, k: K, v: V) -> Self {
-        let n = N::insert(self.n.as_ref(), 0, k, v);
+        let n = N::insert(self.n.as_ref(), 0, k.clone(), v.clone());
         match n {
             Some(n) => Self {
                 n: H::new(n),
                 count: self.count + 1,
             },
-            None => Self {
-                n: self.n.clone(),
-                count: self.count,
-            },
+            None => {
+                // the key is already found, overwrite it
+                let n = N::insert(self.remove(k.clone()).n.as_ref(), 0, k, v).unwrap();
+                Self {
+                    n: H::new(n),
+                    count: self.count,
+                }
+            }
         }
     }
 
@@ -286,6 +290,27 @@ mod tests {
 
         for i in 0..numbers.len() {
             assert_eq!(n.exist(&numbers[i]), true);
+        }
+    }
+
+    #[test]
+    fn insert_redundant_key_different_values() {
+        let numbers = [3, 3, 0x13, 120, 4, 9, 27, 1, 45];
+        let mut n = HashMap::empty();
+        for i in numbers {
+            n = n.insert(i, i * i);
+        }
+
+        for i in numbers {
+            n = n.insert(i, 2 * i * i);
+        }
+
+        assert_eq!(n.len(), 8);
+
+        for i in 0..numbers.len() {
+            let num = numbers[i];
+            assert!(n.exist(&num));
+            assert_eq!(*n.find(&num).unwrap(), 2 * num * num);
         }
     }
 

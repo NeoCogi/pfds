@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 //
 // Copyright 2021-Present (c) Raja Lehtihet & Wael El Oraiby
 //
@@ -102,11 +103,11 @@ fn rev<E: Clone>(l: &N<E>) -> N<E> {
 }
 
 #[derive(Clone)]
-pub struct List<E: Clone> {
+pub struct List<E: Clone + Sized> {
     n: N<E>,
 }
 
-impl<E: Clone> List<E> {
+impl<E: Clone + Sized> List<E> {
     ///
     /// create and return a new empty list/stack
     ///
@@ -165,6 +166,16 @@ impl<E: Clone> List<E> {
     pub fn rev(&self) -> List<E> {
         List { n: rev(&self.n) }
     }
+
+    ///
+    /// returns an iterator
+    ///
+    pub fn iter<'a>(&self) -> Iter<'a, E> {
+        Iter {
+            node: self.n.clone(),
+            _phantom: PhantomData::default(),
+        }
+    }
 }
 
 fn drop_next<E>(n: &mut N<E>) -> Option<N<E>> {
@@ -189,6 +200,27 @@ impl<E: Clone> Drop for List<E> {
             match &mut n {
                 Some(v) => n = drop_next(v),
                 None => return,
+            }
+        }
+    }
+}
+
+pub struct Iter<'a, E> {
+    node: N<E>,
+    _phantom: PhantomData<&'a E>,
+}
+
+impl<'a, E: Clone> std::iter::Iterator for Iter<'a, E> {
+    type Item = E;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let nc = self.node.clone(); // needless, but required for the borrow checker
+        let n = nc.as_ref();
+        match n {
+            ListNode::Nil => None,
+            ListNode::Node(_, e, next) => {
+                self.node = next.clone();
+                Some(e.clone())
             }
         }
     }
@@ -257,6 +289,26 @@ mod tests {
         let list_elems = l.to_vec();
         for i in 0..50000 {
             assert_eq!(list_elems[l.len() - 1 - i], elements[i]);
+        }
+    }
+
+    #[test]
+    fn iter() {
+        let mut elements = Vec::new();
+        let mut l = List::empty();
+        for _ in 0..1000 {
+            let e = rand();
+            elements.push(e);
+            l = l.push(e);
+        }
+
+        assert_eq!(elements.len(), 1000);
+        assert_eq!(elements.len(), l.len());
+
+        let mut count = 0;
+        for i in l.iter() {
+            assert_eq!(i, elements[elements.len() - count - 1]);
+            count += 1;
         }
     }
 }
