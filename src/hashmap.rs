@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 //
 // Copyright 2021-Present (c) Raja Lehtihet & Wael El Oraiby
 //
@@ -263,6 +264,97 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMap<K, V> {
     pub fn len(&self) -> usize {
         self.count
     }
+
+    ///
+    /// returns an iterator
+    ///
+    pub fn iter<'a>(&self) -> Iter<'a, K, V> {
+        Iter {
+            stack: Vec::new(),
+            current: Pointer {
+                node: self.n.clone(),
+                idx: 0,
+            },
+            _phantom: PhantomData::default(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct Pointer<K: Clone + Eq + Hashable, V: Clone> {
+    idx: usize,
+    node: H<K, V>,
+}
+
+pub struct Iter<'a, K: Clone + Eq + Hashable, V: Clone> {
+    stack: Vec<Pointer<K, V>>,
+    current: Pointer<K, V>,
+    _phantom: PhantomData<&'a (K, V)>,
+}
+
+impl<'a, K: Clone + Eq + Hashable, V: Clone> Iter<'a, K, V> {
+    fn pop(&mut self) {
+        match self.stack.pop() {
+            Some(Pointer { idx: i, node: n }) => {
+                self.current = Pointer {
+                    idx: i + 1,
+                    node: n,
+                }
+            }
+
+            None => {
+                self.current = Pointer {
+                    idx: 0,
+                    node: Arc::new(HashMapNode::Empty),
+                }
+            }
+        }
+    }
+}
+
+impl<'a, K: Clone + Eq + Hashable, V: Clone> std::iter::Iterator for Iter<'a, K, V> {
+    type Item = (K, V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let nc = self.current.clone(); // needless, but required for the borrow checker
+        let n = nc.node.as_ref();
+        match n {
+            HashMapNode::Empty => {
+                // we only enter this one if the root can be empty!
+                None
+            }
+
+            HashMapNode::One(_s, k, v) => {
+                // we only enter this one if it's in the root!
+                Some((k.clone(), v.clone()))
+            }
+
+            HashMapNode::Node(size, entries) => {
+                while self.current.idx < TRIE_SIZE {
+                    match &entries[self.current.idx] {
+                        HashMapNode::Empty => self.current.idx += 1,
+                        HashMapNode::One(_s, k, v) => {
+                            self.current.idx += 1;
+                            return Some((k.clone(), v.clone()));
+                        }
+                        HashMapNode::Node(new_size, new_entries) => {
+                            self.stack.push(Pointer {
+                                idx: self.current.idx,
+                                node: Arc::new(HashMapNode::Node(*size, entries.clone())),
+                            });
+                            self.current = Pointer {
+                                idx: 0,
+                                node: Arc::new(HashMapNode::Node(*new_size, new_entries.clone())),
+                            };
+                            return self.next();
+                        }
+                    }
+                }
+                self.pop();
+                self.next()
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -395,5 +487,37 @@ mod tests {
         }
 
         assert_eq!(n.len(), 0);
+    }
+
+    #[test]
+    fn iter_1000000() {
+        let mut numbers = Vec::new();
+        let mut n = HashMap::empty();
+        for _ in 0..1000000 {
+            let r = rand() % 100000;
+            n = n.insert(r, r * r);
+            numbers.push(r);
+        }
+
+        let mut sorted = numbers.clone();
+        sorted.sort();
+        sorted.dedup();
+
+        assert_eq!(n.len(), sorted.len());
+
+        for i in 0..numbers.len() {
+            assert_eq!(n.exist(&numbers[i]), true);
+            let k = numbers[i];
+
+            assert_eq!(n.find(&k).is_some(), true);
+            assert_eq!(*n.find(&k).unwrap(), k * k);
+        }
+
+        let mut v = n.iter().collect::<Vec<_>>();
+        v.sort();
+        assert_eq!(v.len(), sorted.len());
+        for i in 0..sorted.len() {
+            assert_eq!(sorted[i], v[i].0);
+        }
     }
 }
