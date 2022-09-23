@@ -1,3 +1,5 @@
+use std::hash::Hash;
+use std::marker::PhantomData;
 //
 // Copyright 2021-Present (c) Raja Lehtihet & Wael El Oraiby
 //
@@ -248,6 +250,97 @@ impl<K: Hashable + Eq + Clone> HashSet<K> {
     pub fn len(&self) -> usize {
         self.count
     }
+
+    ///
+    /// returns an iterator
+    ///
+    pub fn iter<'a>(&self) -> Iter<'a, K> {
+        Iter {
+            stack: Vec::new(),
+            current: Pointer {
+                node: self.n.clone(),
+                idx: 0,
+            },
+            _phantom: PhantomData::default(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct Pointer<E: Clone + Eq + Hashable> {
+    idx: usize,
+    node: H<E>,
+}
+
+pub struct Iter<'a, E: Clone + Eq + Hashable> {
+    stack: Vec<Pointer<E>>,
+    current: Pointer<E>,
+    _phantom: PhantomData<&'a E>,
+}
+
+impl<'a, E: Clone + Eq + Hashable> Iter<'a, E> {
+    fn pop(&mut self) {
+        match self.stack.pop() {
+            Some(Pointer { idx: i, node: n }) => {
+                self.current = Pointer {
+                    idx: i + 1,
+                    node: n,
+                }
+            }
+
+            None => {
+                self.current = Pointer {
+                    idx: 0,
+                    node: Arc::new(HashSetNode::Empty),
+                }
+            }
+        }
+    }
+}
+
+impl<'a, E: Clone + Eq + Hashable> std::iter::Iterator for Iter<'a, E> {
+    type Item = E;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let nc = self.current.clone(); // needless, but required for the borrow checker
+        let n = nc.node.as_ref();
+        match n {
+            HashSetNode::Empty => {
+                // we only enter this one if the root can be empty!
+                None
+            }
+
+            HashSetNode::One(_k, v) => {
+                // we only enter this one if it's in the root!
+                Some(v.clone())
+            }
+
+            HashSetNode::Node(size, entries) => {
+                while self.current.idx < TRIE_SIZE {
+                    match &entries[self.current.idx] {
+                        HashSetNode::Empty => self.current.idx += 1,
+                        HashSetNode::One(_k, v) => {
+                            self.current.idx += 1;
+                            return Some(v.clone());
+                        }
+                        HashSetNode::Node(new_size, new_entries) => {
+                            self.stack.push(Pointer {
+                                idx: self.current.idx,
+                                node: Arc::new(HashSetNode::Node(*size, entries.clone())),
+                            });
+                            self.current = Pointer {
+                                idx: 0,
+                                node: Arc::new(HashSetNode::Node(*new_size, new_entries.clone())),
+                            };
+                            return self.next();
+                        }
+                    }
+                }
+                self.pop();
+                self.next()
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -355,5 +448,33 @@ mod tests {
         }
 
         assert_eq!(n.len(), 0);
+    }
+
+    #[test]
+    fn iter_1000000() {
+        let mut numbers = Vec::new();
+        let mut n = HashSet::empty();
+        for _ in 0..1000000 {
+            let r = rand() % 100000;
+            n = n.insert(r);
+            numbers.push(r);
+        }
+
+        let mut sorted = numbers.clone();
+        sorted.sort();
+        sorted.dedup();
+
+        assert_eq!(n.len(), sorted.len());
+
+        for i in 0..numbers.len() {
+            assert_eq!(n.exist(numbers[i]), true);
+        }
+
+        let mut v = n.iter().collect::<Vec<_>>();
+        v.sort();
+        assert_eq!(v.len(), sorted.len());
+        for i in 0..sorted.len() {
+            assert_eq!(sorted[i], v[i]);
+        }
     }
 }
