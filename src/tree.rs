@@ -1,20 +1,47 @@
 use crate::{HashMap, HashSet, Hashable};
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Node<D: Clone> {
     id: usize,
-    tree: Arc<Tree<D>>,
+    tree: Arc<TreeIntern<D>>,
 }
 
 impl<D: Clone> Node<D> {
     pub fn data(&self) -> &D {
         self.tree.data.find(&self.id).unwrap()
     }
+
+    pub fn tree(&self) -> Tree<D> {
+        Tree {
+            tree: self.tree.clone(),
+        }
+    }
+
+    pub fn parent(&self) -> Option<Node<D>> {
+        self.tree.child_to_parent.find(&self.id).map(|parent| Node {
+            id: *parent,
+            tree: self.tree.clone(),
+        })
+    }
+
+    pub fn iter_children<'a>(&self) -> Iter<'a, D> {
+        Iter {
+            tree: self.tree.clone(),
+            current: self.tree.children.find(&self.id).unwrap().iter(),
+            _phantom: PhantomData::default(),
+        }
+    }
+
+    pub fn add_child(&self, data: D) -> (Self, Tree<D>) {
+        let (node, tree) = self.tree.add_node(Some(self.id), data);
+        (node, Tree { tree })
+    }
 }
 
 #[derive(Clone)]
-struct Tree<D: Clone> {
+struct TreeIntern<D: Clone> {
     count: usize,
     data: HashMap<usize, D>,
     child_to_parent: HashMap<usize, usize>,
@@ -22,7 +49,7 @@ struct Tree<D: Clone> {
     roots: HashSet<usize>,
 }
 
-impl<D: Clone> Tree<D> {
+impl<D: Clone> TreeIntern<D> {
     pub fn empty() -> Arc<Self> {
         Arc::new(Self {
             count: 0,
@@ -97,9 +124,60 @@ impl<D: Clone> Tree<D> {
     }
 }
 
+pub struct Iter<'a, E: Clone> {
+    tree: Arc<TreeIntern<E>>,
+    current: crate::hashset::Iter<'a, usize>,
+    _phantom: PhantomData<&'a E>,
+}
+
+impl<'a, E: Clone> std::iter::Iterator for Iter<'a, E> {
+    type Item = Node<E>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.current.next() {
+            Some(id) => Some(Node {
+                id,
+                tree: self.tree.clone(),
+            }),
+            None => None,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Tree<D: Clone> {
+    tree: Arc<TreeIntern<D>>,
+}
+
+impl<D: Clone> Tree<D> {
+    pub fn empty() -> Self {
+        Self {
+            tree: TreeIntern::empty(),
+        }
+    }
+
+    pub fn add_root_node(&self, data: D) -> (Node<D>, Self) {
+        let (node, tree) = self.tree.add_node(None, data);
+        (node, Self { tree })
+    }
+
+    pub fn remove_root_node(&self, node: Node<D>) -> Self {
+        Self {
+            tree: self.tree.remove_node(&node),
+        }
+    }
+
+    pub fn roots<'a>(&self) -> Iter<'a, D> {
+        Iter {
+            tree: self.tree.clone(),
+            current: self.tree.roots.iter(),
+            _phantom: PhantomData::default(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::hashset::*;
     use crate::tree::*;
 
     static mut SEED: i64 = 777;
@@ -112,5 +190,20 @@ mod tests {
     }
 
     #[test]
-    fn add_children() {}
+    fn add_roots() {
+        let mut tree = Tree::empty();
+        for i in 0..128 {
+            let (_, t) = tree.add_root_node(i);
+            tree = t;
+        }
+
+        let mut s = std::collections::HashSet::new();
+        for r in tree.roots() {
+            s.insert(*r.data());
+        }
+
+        for i in 0..128 {
+            assert!(s.contains(&i));
+        }
+    }
 }
