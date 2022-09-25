@@ -12,11 +12,11 @@ Purely functional data structures have the persistence property. The data struct
 - [x] Balanced Map
 - [x] Hash Set
 - [x] Hash Map
+- [x] Tree
 
 ## What's excluded
 
-Higher order functions like `fold`, `map`, `filter` are excluded as they are considered extension to the current data structures. They might be added in the future if there is enough time & interest. For now, consider converting to `Vec` and use the functions that `Vec` provides.
-
+`Map`/`Set`/`Queue` `iter` are not yet implemented. They are available for `List`/`HashSet`/`HashMap`/`Tree` however. 
 ## Example
 
 ```rust

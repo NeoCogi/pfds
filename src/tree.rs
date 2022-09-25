@@ -28,6 +28,7 @@ impl<D: Clone> AddChildResult<D> {
 }
 
 impl<D: Clone> Node<D> {
+    pub fn id(&self) -> usize { self.id }
     pub fn data(&self) -> &D {
         self.tree.data.find(&self.id).unwrap()
     }
@@ -214,6 +215,10 @@ impl<D: Clone> Tree<D> {
             current: self.tree.roots.iter(),
             _phantom: PhantomData::default(),
         }
+    }
+
+    pub fn get_node_by_id(&self, node_id: usize) -> Option<Node<D>> {
+        self.tree.data.find(&node_id).map(|_| { Node { id: node_id, tree: self.tree.clone()} })
     }
 }
 
