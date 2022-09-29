@@ -49,11 +49,11 @@ pub(crate) const TRIE_SIZE: usize = 1 << TRIE_BITS;
 pub(crate) const TRIE_MASK: usize = TRIE_SIZE - 1;
 
 pub trait Hashable {
-    fn hash(&self) -> usize;
+    fn hash(&self) -> u64;
 }
 
 impl Hashable for usize {
-    fn hash(&self) -> usize {
-        *self
+    fn hash(&self) -> u64 {
+        *self as u64
     }
 }

@@ -50,8 +50,7 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMapNode<K, V> {
     }
 
     fn new_empty_slice() -> [N<K, V>; TRIE_SIZE] {
-        let mut s: [MaybeUninit<N<K, V>>; TRIE_SIZE] =
-            unsafe { MaybeUninit::uninit().assume_init() };
+        let mut s: [MaybeUninit<N<K, V>>; TRIE_SIZE] = unsafe { MaybeUninit::uninit().assume_init() };
         for i in s.iter_mut().take(TRIE_SIZE) {
             *i = MaybeUninit::new(N::Empty);
         }
@@ -63,13 +62,11 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMapNode<K, V> {
         // forget(s);
         // res
 
-        unsafe {
-            (&*(&MaybeUninit::new(s) as *const _ as *const MaybeUninit<_>)).assume_init_read()
-        }
+        unsafe { (&*(&MaybeUninit::new(s) as *const _ as *const MaybeUninit<_>)).assume_init_read() }
     }
 
     fn insert(h: &N<K, V>, l: u32, k: K, v: V) -> Option<N<K, V>> {
-        let kh = k.hash();
+        let kh = k.hash() as usize;
         let idx = kh.wrapping_shr(l) & TRIE_MASK;
 
         match h {
@@ -107,7 +104,7 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMapNode<K, V> {
     }
 
     fn exist(h: &N<K, V>, l: u32, k: &K) -> bool {
-        let kh = k.hash();
+        let kh = k.hash() as usize;
         let idx = kh.wrapping_shr(l) & TRIE_MASK;
 
         match h {
@@ -118,7 +115,7 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMapNode<K, V> {
     }
 
     fn find(&self, l: u32, k: &K) -> Option<&V> {
-        let kh = k.hash();
+        let kh = k.hash() as usize;
         let idx = kh.wrapping_shr(l) & TRIE_MASK;
 
         match self {
@@ -130,7 +127,7 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMapNode<K, V> {
     }
 
     fn remove(h: &N<K, V>, l: u32, k: K) -> Option<N<K, V>> {
-        let kh = k.hash();
+        let kh = k.hash() as usize;
         let idx = kh.wrapping_shr(l) & TRIE_MASK;
         match h {
             Empty => None,
@@ -186,10 +183,7 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMap<K, V> {
     /// create and return a new empty map
     ///
     pub fn empty() -> Self {
-        Self {
-            n: N::empty(),
-            count: 0,
-        }
+        Self { n: N::empty(), count: 0 }
     }
 
     ///
@@ -271,10 +265,7 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMap<K, V> {
     pub fn iter<'a>(&self) -> Iter<'a, K, V> {
         Iter {
             stack: Vec::new(),
-            current: Pointer {
-                node: self.n.clone(),
-                idx: 0,
-            },
+            current: Pointer { node: self.n.clone(), idx: 0 },
             _phantom: PhantomData::default(),
         }
     }
@@ -295,12 +286,7 @@ pub struct Iter<'a, K: Clone + Eq + Hashable, V: Clone> {
 impl<'a, K: Clone + Eq + Hashable, V: Clone> Iter<'a, K, V> {
     fn pop(&mut self) {
         match self.stack.pop() {
-            Some(Pointer { idx: i, node: n }) => {
-                self.current = Pointer {
-                    idx: i + 1,
-                    node: n,
-                }
-            }
+            Some(Pointer { idx: i, node: n }) => self.current = Pointer { idx: i + 1, node: n },
 
             None => {
                 self.current = Pointer {

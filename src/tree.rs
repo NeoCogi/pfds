@@ -1,224 +1,145 @@
 use crate::{HashMap, HashSet, Hashable};
 use std::marker::PhantomData;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 #[derive(Clone)]
-pub struct Node<D: Clone> {
-    id: usize,
-    tree: Arc<TreeIntern<D>>,
-}
+pub struct Node<D: Clone + Default>(Arc<NodePriv<D>>);
 
 #[derive(Clone)]
-pub struct AddChildResult<D: Clone> {
-    node: Node<D>,
-    child: Node<D>,
-    tree: Tree<D>,
+struct NodePriv<D: Clone + Default> {
+    data: D,
+    children: HashSet<Node<D>>,
 }
 
-impl<D: Clone> AddChildResult<D> {
-    pub fn node(&self) -> Node<D> {
-        self.node.clone()
-    }
-    pub fn child(&self) -> Node<D> {
-        self.child.clone()
-    }
-    pub fn tree(&self) -> Tree<D> {
-        self.tree.clone()
+impl<D: Clone + Default> Hashable for Node<D> {
+    fn hash(&self) -> u64 {
+        Arc::as_ptr(&self.0) as usize as u64
     }
 }
 
-impl<D: Clone> Node<D> {
-    pub fn id(&self) -> usize { self.id }
+impl<D: Clone + Default> PartialEq for Node<D> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl<D: Clone + Default> Eq for Node<D> {}
+
+impl<D: Clone + Default> Node<D> {
     pub fn data(&self) -> &D {
-        self.tree.data.find(&self.id).unwrap()
+        &self.0.data
     }
 
-    pub fn tree(&self) -> Tree<D> {
-        Tree {
-            tree: self.tree.clone(),
-        }
+    pub fn iter_children<'a>(&self) -> crate::hashset::Iter<'a, Self> {
+        self.0.children.iter()
     }
 
-    pub fn parent(&self) -> Option<Node<D>> {
-        self.tree.child_to_parent.find(&self.id).map(|parent| Node {
-            id: *parent,
-            tree: self.tree.clone(),
-        })
-    }
-
-    pub fn iter_children<'a>(&self) -> Iter<'a, D> {
-        Iter {
-            tree: self.tree.clone(),
-            current: self.tree.children.find(&self.id).unwrap().iter(),
-            _phantom: PhantomData::default(),
-        }
-    }
-
-    pub fn add_child(&self, data: D) -> AddChildResult<D> {
-        let (node, child, tree) = self.tree.add_node(Some(self.id), data);
-        AddChildResult {
-            node: node.unwrap(),
-            child,
-            tree: Tree { tree },
-        }
+    fn new_with_data(data: D) -> Self {
+        Self(Arc::new(NodePriv {
+            data,
+            children: HashSet::empty(),
+        }))
     }
 }
 
 #[derive(Clone)]
-struct TreeIntern<D: Clone> {
-    count: usize,
-    data: HashMap<usize, D>,
-    child_to_parent: HashMap<usize, usize>,
-    children: HashMap<usize, HashSet<usize>>,
-    roots: HashSet<usize>,
+struct TreeIntern<D: Clone + Default> {
+    root: Node<D>,
 }
 
-impl<D: Clone> TreeIntern<D> {
+impl<D: Clone + Default> TreeIntern<D> {
     pub fn empty() -> Arc<Self> {
         Arc::new(Self {
-            count: 0,
-            data: HashMap::empty(),
-            child_to_parent: HashMap::empty(),
-            children: HashMap::empty(),
-            roots: HashSet::empty(),
+            root: Node(Arc::new(NodePriv {
+                data: D::default(),
+                children: HashSet::empty(),
+            })),
         })
     }
 
-    pub fn add_node(
-        &self,
-        parent: Option<usize>,
-        data: D,
-    ) -> (
-        Option<Node<D>>, /* node */
-        Node<D>,         /* child */
-        Arc<Self>,
-    ) {
-        let node_id = self.count;
-        let (child_to_parent, children, roots) = match parent {
-            Some(p) => {
-                let parent_children = match self.children.find(&p) {
-                    Some(pc) => pc.clone(),
-                    None => HashSet::empty(),
-                };
-                let new_children = self.children.insert(p, parent_children.insert(node_id));
-                (
-                    self.child_to_parent.insert(node_id, p),
-                    new_children,
-                    self.roots.clone(),
-                )
-            }
-            None => (
-                self.child_to_parent.clone(),
-                self.children.clone(),
-                self.roots.insert(node_id),
-            ),
-        };
-
-        let tree = Arc::new(Self {
-            count: node_id + 1,
-            data: self.data.insert(node_id, data),
-            child_to_parent,
-            children,
-            roots,
-        });
-
-        let parent = parent.map(|id| Node {
-            id,
-            tree: tree.clone(),
-        });
-
-        let child = Node {
-            id: node_id,
-            tree: tree.clone(),
-        };
-
-        (parent, child, tree)
-    }
-
-    pub fn remove_node(&self, node: &Node<D>) -> Arc<Self> {
-        let data = self.data.remove(node.id);
-        let node_children = self.children.find(&node.id).unwrap().to_vec();
-        let children = self.children.remove(node.id);
-        let mut child_to_parent = self.child_to_parent.clone();
-        for c in node_children {
-            child_to_parent = child_to_parent.remove(c);
+    pub fn add_node(&self, path: &Vec<Node<D>>, data: D) -> (Vec<Node<D>> /* node */, Arc<Self>) {
+        assert!(path.len() >= 1);
+        for i in 1..path.len() {
+            assert!(path[i - 1].0.children.exist(path[i].clone()));
         }
 
-        let roots = {
-            let parent = child_to_parent.find(&node.id);
-            match parent {
-                Some(p) => {
-                    // remove self from the child to parent
-                    child_to_parent = child_to_parent.remove(node.id);
-                    self.roots.clone()
-                }
-                None => self.roots.remove(node.id),
-            }
-        };
+        let new_child = Node::new_with_data(data);
+        let mut new_path = vec![new_child.clone()];
+        let mut old_node = None;
+        let mut current_node = new_child.clone();
+        let len = path.len();
+        for i in 0..len {
+            let parent = &path[len - i - 1];
+            let mut children = parent.0.children.insert(current_node.clone());
+            children = match old_node {
+                Some(p) => children.remove(p), // remove the old node (old parent) after inserting the new modified one
+                None => children,
+            };
 
-        Arc::new(Self {
-            count: self.count,
-            data,
-            children,
-            child_to_parent,
-            roots,
-        })
-    }
-}
-
-pub struct Iter<'a, E: Clone> {
-    tree: Arc<TreeIntern<E>>,
-    current: crate::hashset::Iter<'a, usize>,
-    _phantom: PhantomData<&'a E>,
-}
-
-impl<'a, E: Clone> std::iter::Iterator for Iter<'a, E> {
-    type Item = Node<E>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.current.next() {
-            Some(id) => Some(Node {
-                id,
-                tree: self.tree.clone(),
-            }),
-            None => None,
+            let new_parent = Node(Arc::new(NodePriv {
+                data: parent.0.data.clone(),
+                children,
+            }));
+            new_path.push(new_parent.clone());
+            current_node = new_parent;
+            old_node = Some(parent.clone());
         }
+
+        new_path.reverse();
+        let root = new_path[0].clone();
+        (new_path, Arc::new(Self { root }))
+    }
+
+    pub fn remove_node(&self, path: &Vec<Node<D>>) -> (Vec<Node<D>>, Arc<Self>) {
+        assert!(path.len() >= 2);
+        let mut new_path = Vec::new();
+        let mut old_node = None;
+        let len = path.len();
+        let mut current_node = path[len - 1].clone();
+        for i in 0..len - 1 {
+            let parent = &path[len - i - 2];
+            let mut children = parent.0.children.remove(current_node.clone());
+            children = match old_node {
+                Some(p) => children.insert(p), // insert the modified node (old parent rebuilt) after removing the old one
+                None => children,
+            };
+
+            let new_parent = Node(Arc::new(NodePriv {
+                data: parent.0.data.clone(),
+                children,
+            }));
+            new_path.push(new_parent.clone());
+            old_node = Some(new_parent);
+        }
+
+        let root = new_path[0].clone();
+        (new_path, Arc::new(Self { root }))
     }
 }
 
 #[derive(Clone)]
-pub struct Tree<D: Clone> {
+pub struct Tree<D: Clone + Default> {
     tree: Arc<TreeIntern<D>>,
 }
 
-impl<D: Clone> Tree<D> {
+impl<D: Clone + Default> Tree<D> {
     pub fn empty() -> Self {
-        Self {
-            tree: TreeIntern::empty(),
-        }
+        Self { tree: TreeIntern::empty() }
     }
 
-    pub fn add_root_node(&self, data: D) -> (Node<D>, Self) {
-        let (_parent, child, tree) = self.tree.add_node(None, data);
-        (child, Self { tree })
+    pub fn add_node(&self, path: &Vec<Node<D>>, data: D) -> (Vec<Node<D>>, Self) {
+        let (new_path, tree) = self.tree.add_node(path, data);
+        (new_path, Self { tree })
     }
 
-    pub fn remove_root_node(&self, node: Node<D>) -> Self {
-        Self {
-            tree: self.tree.remove_node(&node),
-        }
+    pub fn remove_node(&self, path_to_node: &Vec<Node<D>>) -> (Vec<Node<D>>, Self) {
+        let (new_path, tree) = self.tree.remove_node(path_to_node);
+        (new_path, Self { tree })
     }
 
-    pub fn roots<'a>(&self) -> Iter<'a, D> {
-        Iter {
-            tree: self.tree.clone(),
-            current: self.tree.roots.iter(),
-            _phantom: PhantomData::default(),
-        }
-    }
-
-    pub fn get_node_by_id(&self, node_id: usize) -> Option<Node<D>> {
-        self.tree.data.find(&node_id).map(|_| { Node { id: node_id, tree: self.tree.clone()} })
+    pub fn root(&self) -> Node<D> {
+        self.tree.root.clone()
     }
 }
 
@@ -239,12 +160,12 @@ mod tests {
     fn add_roots() {
         let mut tree = Tree::empty();
         for i in 0..128 {
-            let (_, t) = tree.add_root_node(i);
+            let (_, t) = tree.add_node(&vec![tree.root()], i);
             tree = t;
         }
 
         let mut s = std::collections::HashSet::new();
-        for r in tree.roots() {
+        for r in tree.root().iter_children() {
             s.insert(*r.data());
         }
 
@@ -258,26 +179,27 @@ mod tests {
         let mut tree = Tree::empty();
         let mut cs = std::collections::HashSet::new();
         for i in 0..128 {
-            let (n, _t) = tree.add_root_node(i);
+            let (p, tree_) = tree.add_node(&vec![tree.root()], i);
             let ch1 = rand();
             let ch2 = rand();
             cs.insert((i, ch1));
             cs.insert((i, ch2));
-            let chr1 = n.add_child(ch1);
-            let chr2 = chr1.node.add_child(ch2);
-            tree = chr2.tree;
+            let (p, tree_) = tree_.add_node(&vec![p[0].clone(), p[1].clone()], ch1);
+            let (_, tree_) = tree_.add_node(&vec![p[0].clone(), p[1].clone()], ch2);
+            tree = tree_;
         }
 
         let mut s = std::collections::HashSet::new();
-        for r in tree.roots() {
-            s.insert(*r.data());
+        for r in tree.root().iter_children() {
+            let d = *r.data();
+            s.insert(d);
         }
 
         for i in 0..128 {
             assert!(s.contains(&i));
         }
 
-        for r in tree.roots() {
+        for r in tree.root().iter_children() {
             for ch in r.iter_children() {
                 assert!(cs.contains(&(*r.data(), *ch.data())));
             }

@@ -64,13 +64,11 @@ impl<K: Hashable + Eq + Clone> HashSetNode<K> {
         // forget(s);
         // res
 
-        unsafe {
-            (&*(&MaybeUninit::new(s) as *const _ as *const MaybeUninit<_>)).assume_init_read()
-        }
+        unsafe { (&*(&MaybeUninit::new(s) as *const _ as *const MaybeUninit<_>)).assume_init_read() }
     }
 
     fn insert(h: &N<K>, l: u32, k: K) -> Option<N<K>> {
-        let kh = k.hash();
+        let kh = k.hash() as usize;
         let idx = kh.wrapping_shr(l) & TRIE_MASK;
 
         match h {
@@ -108,7 +106,7 @@ impl<K: Hashable + Eq + Clone> HashSetNode<K> {
     }
 
     fn exist(h: &N<K>, l: u32, k: K) -> bool {
-        let kh = k.hash();
+        let kh = k.hash() as usize;
         let idx = kh.wrapping_shr(l) & TRIE_MASK;
 
         match h {
@@ -119,7 +117,7 @@ impl<K: Hashable + Eq + Clone> HashSetNode<K> {
     }
 
     fn remove(h: &N<K>, l: u32, k: K) -> Option<N<K>> {
-        let kh = k.hash();
+        let kh = k.hash() as usize;
         let idx = kh.wrapping_shr(l) & TRIE_MASK;
         match h {
             Empty => None,
@@ -175,10 +173,7 @@ impl<K: Hashable + Eq + Clone> HashSet<K> {
     /// create and return a new empty set
     ///
     pub fn empty() -> Self {
-        Self {
-            n: N::empty(),
-            count: 0,
-        }
+        Self { n: N::empty(), count: 0 }
     }
 
     ///
@@ -257,10 +252,7 @@ impl<K: Hashable + Eq + Clone> HashSet<K> {
     pub fn iter<'a>(&self) -> Iter<'a, K> {
         Iter {
             stack: Vec::new(),
-            current: Pointer {
-                node: self.n.clone(),
-                idx: 0,
-            },
+            current: Pointer { node: self.n.clone(), idx: 0 },
             _phantom: PhantomData::default(),
         }
     }
@@ -281,12 +273,7 @@ pub struct Iter<'a, E: Clone + Eq + Hashable> {
 impl<'a, E: Clone + Eq + Hashable> Iter<'a, E> {
     fn pop(&mut self) {
         match self.stack.pop() {
-            Some(Pointer { idx: i, node: n }) => {
-                self.current = Pointer {
-                    idx: i + 1,
-                    node: n,
-                }
-            }
+            Some(Pointer { idx: i, node: n }) => self.current = Pointer { idx: i + 1, node: n },
 
             None => {
                 self.current = Pointer {
