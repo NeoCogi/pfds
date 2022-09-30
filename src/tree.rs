@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 #[derive(Clone)]
-pub struct Node<D: Clone + Default>(Arc<NodePriv<D>>);
+struct Node<D: Clone + Default>(Arc<NodePriv<D>>);
 
 #[derive(Clone)]
 struct NodePriv<D: Clone + Default> {
@@ -44,34 +44,34 @@ impl<D: Clone + Default> Node<D> {
 }
 
 #[derive(Clone)]
-struct TreeIntern<D: Clone + Default> {
-    root: Node<D>,
+struct PathPriv<D: Clone + Default> {
+    path: Vec<Node<D>>,
 }
 
-impl<D: Clone + Default> TreeIntern<D> {
+impl<D: Clone + Default> PathPriv<D> {
     pub fn empty() -> Arc<Self> {
         Arc::new(Self {
-            root: Node(Arc::new(NodePriv {
+            path: vec![Node(Arc::new(NodePriv {
                 data: D::default(),
                 children: HashSet::empty(),
-            })),
+            }))],
         })
     }
 
-    pub fn add_node(&self, path: &Vec<Node<D>>, data: D) -> (Vec<Node<D>> /* node */, Arc<Self>) {
-        assert!(path.len() >= 1);
-        for i in 1..path.len() {
-            assert!(path[i - 1].0.children.exist(path[i].clone()));
+    pub fn add_node(&self, data: D) -> Arc<Self> {
+        assert!(self.path.len() >= 1);
+        for i in 1..self.path.len() {
+            assert!(self.path[i - 1].0.children.exist(self.path[i].clone()));
         }
 
         let new_child = Node::new_with_data(data);
         let mut new_path = vec![new_child.clone()];
-        let len = path.len();
+        let len = self.path.len();
         for i in 0..len {
-            let parent = &path[len - i - 1];
+            let parent = &self.path[len - i - 1];
             let mut children = parent.0.children.insert(new_path[i].clone());
             children = if i != 0 {
-                children.remove(path[len - i].clone()) // remove the old node (old parent) after inserting the new modified one
+                children.remove(self.path[len - i].clone()) // remove the old node (old parent) after inserting the new modified one
             } else {
                 children
             };
@@ -84,17 +84,17 @@ impl<D: Clone + Default> TreeIntern<D> {
         }
 
         new_path.reverse();
-        let root = new_path[0].clone();
-        (new_path, Arc::new(Self { root }))
+
+        Arc::new(Self { path: new_path })
     }
 
-    pub fn remove_node(&self, path: &Vec<Node<D>>) -> (Vec<Node<D>>, Arc<Self>) {
-        assert!(path.len() >= 2);
+    pub fn remove_node(&self) -> Arc<Self> {
+        assert!(self.path.len() >= 2);
         let mut new_path: Vec<Node<D>> = Vec::new();
-        let len = path.len();
+        let len = self.path.len();
         for i in 0..len - 1 {
-            let parent = &path[len - i - 2];
-            let mut children = parent.0.children.remove(path[len - i - 1].clone());
+            let parent = &self.path[len - i - 2];
+            let mut children = parent.0.children.remove(self.path[len - i - 1].clone());
             children = if i != 0 {
                 children.insert(new_path[i - 1].clone()) // insert the modified node (old parent rebuilt) after removing the old one
             } else {
@@ -110,45 +110,61 @@ impl<D: Clone + Default> TreeIntern<D> {
 
         new_path.reverse();
         let root = new_path[0].clone();
-        (new_path, Arc::new(Self { root }))
+        Arc::new(Self { path: new_path })
     }
 }
 
 #[derive(Clone)]
-pub struct Tree<D: Clone + Default> {
-    tree: Arc<TreeIntern<D>>,
+pub struct Path<D: Clone + Default> {
+    path: Arc<PathPriv<D>>,
 }
 
-impl<D: Clone + Default> Tree<D> {
+impl<D: Clone + Default> Path<D> {
     pub fn empty() -> Self {
-        Self { tree: TreeIntern::empty() }
+        Self { path: PathPriv::empty() }
     }
 
-    pub fn add_node(&self, path: &Vec<Node<D>>, data: D) -> (Vec<Node<D>>, Self) {
-        let (new_path, tree) = self.tree.add_node(path, data);
-        (new_path, Self { tree })
-    }
-
-    pub fn remove_node(&self, path_to_node: &Vec<Node<D>>) -> (Vec<Node<D>>, Self) {
-        let (new_path, tree) = self.tree.remove_node(path_to_node);
-        (new_path, Self { tree })
-    }
-
-    pub fn root(&self) -> Node<D> {
-        self.tree.root.clone()
-    }
-
-    fn flatten_priv(node: &Node<D>, res: &mut Vec<Node<D>>) {
-        for c in node.iter_children() {
-            res.push(c.clone());
-            Self::flatten_priv(&c, res);
+    pub fn add_node(&self, data: D) -> Self {
+        Self {
+            path: self.path.add_node(data),
         }
     }
 
-    pub fn flatten(&self) -> Vec<Node<D>> {
-        let mut res = vec![self.tree.root.clone()];
-        Self::flatten_priv(&self.tree.root, &mut res);
+    pub fn remove_node(&self) -> Self {
+        Self { path: self.path.remove_node() }
+    }
+
+    pub fn root(&self) -> Self {
+        Self {
+            path: Arc::new(PathPriv {
+                path: vec![self.path.path[0].clone()],
+            }),
+        }
+    }
+
+    pub fn data(&self) -> &D {
+        self.path.path.last().unwrap().data()
+    }
+
+    pub fn children(&self) -> Vec<Self> {
+        let mut res = Vec::new();
+        for c in self.path.path.last().unwrap().iter_children() {
+            let mut new_path = self.path.path.clone();
+            new_path.push(c);
+
+            res.push(Self {
+                path: Arc::new(PathPriv { path: new_path }),
+            });
+        }
         res
+    }
+
+    pub fn parent(&self) -> Self {
+        let len = self.path.path.len();
+        let parent_path = Vec::from(&self.path.path[0..len - 1]);
+        Self {
+            path: Arc::new(PathPriv { path: parent_path }),
+        }
     }
 }
 
@@ -168,14 +184,14 @@ mod tests {
 
     #[test]
     fn add_roots() {
-        let mut tree = Tree::empty();
+        let mut tree = Path::empty();
         for i in 0..128 {
-            let (_, t) = tree.add_node(&vec![tree.root()], i);
-            tree = t;
+            let t = tree.add_node(i);
+            tree = t.parent();
         }
 
         let mut s = std::collections::HashSet::new();
-        for r in tree.root().iter_children() {
+        for r in tree.children() {
             s.insert(*r.data());
         }
 
@@ -186,32 +202,32 @@ mod tests {
 
     #[test]
     fn add_children() {
-        let mut tree = Tree::empty();
+        let mut tree = Path::empty();
         let mut cs = std::collections::HashSet::new();
         for i in 0..128 {
-            let (p, tree_) = tree.add_node(&vec![tree.root()], i);
+            let node = tree.add_node(i);
             let ch1 = rand();
             let ch2 = rand();
             cs.insert((i, ch1));
             cs.insert((i, ch2));
-            let (p, tree_) = tree_.add_node(&vec![p[0].clone(), p[1].clone()], ch1);
-            let (_, tree_) = tree_.add_node(&vec![p[0].clone(), p[1].clone()], ch2);
-            tree = tree_;
+            let node1 = node.add_node(ch1);
+            let node2 = node1.parent().add_node(ch2);
+            tree = node2.root();
         }
 
         let mut s = std::collections::HashSet::new();
-        for r in tree.root().iter_children() {
+        for r in tree.children() {
             let d = *r.data();
             s.insert(d);
-            assert_eq!(r.iter_children().count(), 2);
+            assert_eq!(r.children().len(), 2);
         }
 
         for i in 0..128 {
             assert!(s.contains(&i));
         }
 
-        for r in tree.root().iter_children() {
-            for ch in r.iter_children() {
+        for r in tree.children() {
+            for ch in r.children() {
                 assert!(cs.contains(&(*r.data(), *ch.data())));
             }
         }
@@ -219,14 +235,14 @@ mod tests {
 
     #[test]
     fn remove_roots() {
-        let mut tree = Tree::empty();
+        let mut tree = Path::empty();
         for i in 0..128 {
-            let (_, t) = tree.add_node(&vec![tree.root()], i);
-            tree = t;
+            let t = tree.add_node(i);
+            tree = t.root();
         }
 
         let mut s = std::collections::HashSet::new();
-        for r in tree.root().iter_children() {
+        for r in tree.root().children() {
             s.insert(*r.data());
         }
 
@@ -236,16 +252,16 @@ mod tests {
 
         let mut r = std::collections::HashSet::new();
 
-        while let Some(n) = tree.root().iter_children().next() {
+        while let Some(n) = tree.root().children().iter().next() {
             r.insert(*n.data());
-            let (p, t) = tree.remove_node(&vec![tree.root(), n]);
+            let t = n.remove_node();
             tree = t;
-            for c in tree.root().iter_children() {
+            for c in tree.root().children() {
                 assert!(!r.contains(c.data()))
             }
 
             let isub = s.sub(&r);
-            for c in tree.root().iter_children() {
+            for c in tree.root().children() {
                 assert!(isub.contains(c.data()))
             }
         }
@@ -253,25 +269,25 @@ mod tests {
 
     #[test]
     fn remove_roots_and_nodes() {
-        let mut tree = Tree::empty();
+        let mut tree = Path::empty();
         let mut cs = std::collections::HashSet::new();
         for i in 0..128 {
-            let (p, tree_) = tree.add_node(&vec![tree.root()], i);
+            let node = tree.add_node(i);
             let ch1 = rand();
             let ch2 = rand();
             cs.insert((i, ch1));
             cs.insert((i, ch2));
-            let (p, tree_) = tree_.add_node(&vec![p[0].clone(), p[1].clone()], ch1);
-            let (_, tree_) = tree_.add_node(&vec![p[0].clone(), p[1].clone()], ch2);
-            tree = tree_;
+            let node1 = node.add_node(ch1);
+            let node2 = node1.parent().add_node(ch2);
+            tree = node2.root();
         }
 
         let mut s = std::collections::HashSet::new();
-        for r in tree.root().iter_children() {
-            assert_eq!(r.iter_children().count(), 2);
+        for r in tree.root().children() {
+            assert_eq!(r.children().len(), 2);
             let d = *r.data();
             s.insert(d);
-            for cc in r.iter_children() {
+            for cc in r.children() {
                 s.insert(*cc.data());
             }
         }
@@ -286,8 +302,9 @@ mod tests {
         // highly unadvisable ("reassign tree") inside the loop, since tree and children order will change
         //
         let mut checked_root: std::collections::HashSet<i32> = std::collections::HashSet::new();
-        let mut iter = tree.root().iter_children();
         let mut i = 0;
+        let mut children = tree.root().children();
+        let mut iter = children.iter();
         while let Some(n) = iter.next() {
             if i >= 128 {
                 break;
@@ -300,26 +317,28 @@ mod tests {
 
             i += 1;
             checked_root.insert(*n.data());
-            assert_eq!(n.iter_children().count(), 2);
-            let child = n.iter_children().last().unwrap();
+            assert_eq!(n.children().len(), 2);
+            let children1 = n.children();
+            let child = children1.last().unwrap();
             r.insert(*child.data());
-            let (p, t) = tree.remove_node(&vec![tree.root(), n, child]);
-            tree = t;
-            for c in tree.root().iter_children() {
+            let t = child.remove_node();
+            tree = t.root();
+            for c in tree.root().children() {
                 assert!(!r.contains(c.data()));
-                for cc in c.iter_children() {
+                for cc in c.children() {
                     assert!(!r.contains(cc.data()));
                 }
             }
 
             let isub = s.sub(&r);
-            for c in tree.root().iter_children() {
+            for c in tree.root().children() {
                 assert!(isub.contains(c.data()));
-                for cc in c.iter_children() {
+                for cc in c.children() {
                     assert!(isub.contains(cc.data()))
                 }
             }
-            iter = tree.root().iter_children();
+            children = tree.root().children();
+            iter = children.iter();
         }
     }
 }
