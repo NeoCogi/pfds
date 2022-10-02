@@ -55,10 +55,10 @@ impl<K: Hashable + Eq + Clone> HashSetNode<K> {
         for i in s.iter_mut().take(TRIE_SIZE) {
             *i = MaybeUninit::new(N::Empty);
         }
-
-        // TODO: issue: https://github.com/rust-lang/rust/issues/61956
-        // use transmute
-
+        //
+        // // TODO: issue: https://github.com/rust-lang/rust/issues/61956
+        // // use transmute
+        //
         // let ptr = &mut s as *mut _ as *mut [N<K>; TRIE_SIZE];
         // let res = unsafe { ptr.read() };
         // forget(s);

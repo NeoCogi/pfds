@@ -41,17 +41,57 @@ impl<D: Clone + Default> Node<D> {
             children: HashSet::empty(),
         }))
     }
+
+    fn apply<F: FnOnce(&D) -> Option<D>>(&self, f: F) -> Option<Self> {
+        let new_data = f(self.data());
+        new_data.map(|data| {
+            Self(Arc::new(NodePriv {
+                data,
+                children: self.0.children.clone(),
+            }))
+        })
+    }
+
+    fn apply_data<F: FnOnce(&D) -> Option<D>>(&self, f: F) -> Option<D> {
+        f(self.data())
+    }
+
+    fn apply_recursive<F: Fn(&D) -> Option<D>>(&self, f: Arc<F>) -> Option<Self> {
+        let mut changed = false;
+        let mut children = HashSet::empty();
+
+        // TODO: using while let Some(c) = self.0.children.iter() seems to make this hangs: Investigate!!!!
+        for c in self.0.children.iter() {
+            let new_child = c.apply_recursive(f.clone());
+            changed |= new_child.is_some();
+            children = children.insert(new_child.unwrap());
+        }
+        let children = if changed { children } else { self.0.children.clone() };
+
+        let new_data = (*f)(self.data());
+        changed |= new_data.is_some();
+        let data = match new_data {
+            Some(data) => data,
+            None => self.0.data.clone(),
+        };
+
+        if changed {
+            Some(Self(Arc::new(NodePriv { data, children })))
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Clone)]
 struct PathPriv<D: Clone + Default> {
-    path: Vec<Node<D>>,
+    node_vec: Vec<Node<D>>,
 }
 
 impl<D: Clone + Default> PathPriv<D> {
     pub fn empty() -> Arc<Self> {
         Arc::new(Self {
-            path: vec![Node(Arc::new(NodePriv {
+            node_vec: vec![Node(Arc::new(NodePriv {
                 data: D::default(),
                 children: HashSet::empty(),
             }))],
@@ -59,19 +99,19 @@ impl<D: Clone + Default> PathPriv<D> {
     }
 
     pub fn add_node(&self, data: D) -> Arc<Self> {
-        assert!(self.path.len() >= 1);
-        for i in 1..self.path.len() {
-            assert!(self.path[i - 1].0.children.exist(self.path[i].clone()));
+        assert!(self.node_vec.len() >= 1);
+        for i in 1..self.node_vec.len() {
+            assert!(self.node_vec[i - 1].0.children.exist(self.node_vec[i].clone()));
         }
 
         let new_child = Node::new_with_data(data);
         let mut new_path = vec![new_child.clone()];
-        let len = self.path.len();
+        let len = self.node_vec.len();
         for i in 0..len {
-            let parent = &self.path[len - i - 1];
+            let parent = &self.node_vec[len - i - 1];
             let mut children = parent.0.children.insert(new_path[i].clone());
             children = if i != 0 {
-                children.remove(self.path[len - i].clone()) // remove the old node (old parent) after inserting the new modified one
+                children.remove(self.node_vec[len - i].clone()) // remove the old node (old parent) after inserting the new modified one
             } else {
                 children
             };
@@ -85,16 +125,16 @@ impl<D: Clone + Default> PathPriv<D> {
 
         new_path.reverse();
 
-        Arc::new(Self { path: new_path })
+        Arc::new(Self { node_vec: new_path })
     }
 
     pub fn remove_node(&self) -> Arc<Self> {
-        assert!(self.path.len() >= 2);
+        assert!(self.node_vec.len() >= 2);
         let mut new_path: Vec<Node<D>> = Vec::new();
-        let len = self.path.len();
+        let len = self.node_vec.len();
         for i in 0..len - 1 {
-            let parent = &self.path[len - i - 2];
-            let mut children = parent.0.children.remove(self.path[len - i - 1].clone());
+            let parent = &self.node_vec[len - i - 2];
+            let mut children = parent.0.children.remove(self.node_vec[len - i - 1].clone());
             children = if i != 0 {
                 children.insert(new_path[i - 1].clone()) // insert the modified node (old parent rebuilt) after removing the old one
             } else {
@@ -110,7 +150,34 @@ impl<D: Clone + Default> PathPriv<D> {
 
         new_path.reverse();
         let root = new_path[0].clone();
-        Arc::new(Self { path: new_path })
+        Arc::new(Self { node_vec: new_path })
+    }
+
+    pub fn set_data(&self, data: D) -> Arc<Self> {
+        let rm = self.remove_node();
+        rm.add_node(data)
+    }
+
+    fn node(&self) -> Node<D> {
+        self.node_vec.last().unwrap().clone()
+    }
+
+    fn apply<F: FnOnce(&D) -> Option<D>>(&self, f: F) -> Option<Self> {
+        self.node().apply(f).map(|x| {
+            let mut node_vec = self.node_vec.clone();
+            node_vec[self.node_vec.len() - 1] = x;
+
+            Self { node_vec }
+        })
+    }
+
+    fn apply_recursive<F: Fn(&D) -> Option<D>>(&self, f: F) -> Option<Self> {
+        self.node().apply_recursive(Arc::new(f)).map(|x| {
+            let mut node_vec = self.node_vec.clone();
+            node_vec[self.node_vec.len() - 1] = x;
+
+            Self { node_vec }
+        })
     }
 }
 
@@ -137,36 +204,80 @@ impl<D: Clone + Default> Path<D> {
     pub fn root(&self) -> Self {
         Self {
             path: Arc::new(PathPriv {
-                path: vec![self.path.path[0].clone()],
+                node_vec: vec![self.path.node_vec[0].clone()],
             }),
         }
     }
 
     pub fn data(&self) -> &D {
-        self.path.path.last().unwrap().data()
+        self.path.node_vec.last().unwrap().data()
     }
 
     pub fn children(&self) -> Vec<Self> {
         let mut res = Vec::new();
-        for c in self.path.path.last().unwrap().iter_children() {
-            let mut new_path = self.path.path.clone();
+        for c in self.path.node_vec.last().unwrap().iter_children() {
+            let mut new_path = self.path.node_vec.clone();
             new_path.push(c);
 
             res.push(Self {
-                path: Arc::new(PathPriv { path: new_path }),
+                path: Arc::new(PathPriv { node_vec: new_path }),
             });
         }
         res
     }
 
     pub fn parent(&self) -> Self {
-        let len = self.path.path.len();
-        let parent_path = Vec::from(&self.path.path[0..len - 1]);
+        let len = self.path.node_vec.len();
+        let parent_path = Vec::from(&self.path.node_vec[0..len - 1]);
         Self {
-            path: Arc::new(PathPriv { path: parent_path }),
+            path: Arc::new(PathPriv { node_vec: parent_path }),
+        }
+    }
+
+    pub fn set_data(&self, data: D) -> Self {
+        Self {
+            path: self.path.set_data(data),
+        }
+    }
+
+    pub fn apply<F: FnOnce(&D) -> Option<D>>(&self, f: F) -> Self {
+        match self.path.apply(f) {
+            Some(path) => Self { path: Arc::new(path) },
+            None => self.clone(),
+        }
+    }
+
+    pub fn apply_recursive<F: Fn(&D) -> Option<D>>(&self, f: F) -> Self {
+        match self.path.apply_recursive(f) {
+            Some(path) => Self { path: Arc::new(path) },
+            None => self.clone(),
         }
     }
 }
+
+impl<D: Clone + Default> PartialEq for Path<D> {
+    fn eq(&self, other: &Self) -> bool {
+        if !Arc::ptr_eq(&self.path, &other.path) {
+            // check if the path length are different
+            if self.path.node_vec.len() != other.path.node_vec.len() {
+                return false;
+            }
+            // path is equal: check if node to node are equal
+            for i in 0..self.path.node_vec.len() {
+                if !Arc::ptr_eq(&self.path.node_vec[i].0, &other.path.node_vec[i].0) {
+                    return false;
+                }
+            }
+
+            // they are equal
+            true
+        } else {
+            true
+        }
+    }
+}
+
+impl<D: Clone + Default> Eq for Path<D> {}
 
 #[cfg(test)]
 mod tests {
@@ -339,6 +450,93 @@ mod tests {
             }
             children = tree.root().children();
             iter = children.iter();
+        }
+    }
+
+    #[test]
+    fn apply_roots() {
+        let mut tree = Path::empty();
+        for i in 0..128 {
+            let t = tree.add_node(i);
+            tree = t.parent();
+        }
+
+        let mut s = std::collections::HashSet::new();
+        for r in tree.children() {
+            s.insert(*r.data());
+        }
+
+        for i in 0..128 {
+            assert!(s.contains(&i));
+        }
+
+        for c in tree.children() {
+            let new_c = c.apply(|x| Some(*x * 2));
+            assert_eq!(*c.data() * 2, *new_c.data());
+        }
+    }
+
+    #[test]
+    fn apply_recursive_on_roots() {
+        let mut tree = Path::empty();
+        for i in 0..128 {
+            let t = tree.add_node(i);
+            tree = t.parent();
+        }
+
+        let mut s = std::collections::HashSet::new();
+        for r in tree.children() {
+            s.insert(*r.data());
+        }
+
+        for i in 0..128 {
+            assert!(s.contains(&i));
+        }
+
+        for c in tree.children() {
+            let new_c = c.apply_recursive(&|x: &i32| Some(*x * 2));
+            assert_eq!(*c.data() * 2, *new_c.data());
+        }
+    }
+
+    #[test]
+    fn apply_recursive_children() {
+        let mut tree = Path::empty();
+        let mut cs = std::collections::HashSet::new();
+        for i in 0..128 {
+            let node = tree.add_node(i);
+            let ch1 = rand() & 0xFFFF;
+            let ch2 = rand() & 0xFFFF;
+            cs.insert((i, ch1));
+            cs.insert((i, ch2));
+            let node1 = node.add_node(ch1);
+            let node2 = node1.parent().add_node(ch2);
+            tree = node2.root();
+        }
+
+        let mut s = std::collections::HashSet::new();
+        for r in tree.children() {
+            let d = *r.data();
+            s.insert(d);
+            assert_eq!(r.children().len(), 2);
+        }
+
+        for i in 0..128 {
+            assert!(s.contains(&i));
+        }
+
+        for r in tree.children() {
+            for ch in r.children() {
+                assert!(cs.contains(&(*r.data(), *ch.data())));
+            }
+        }
+
+        let tree_double = tree.apply_recursive(|x| Some(*x * 2));
+
+        for r in tree_double.children() {
+            for ch in r.children() {
+                assert!(cs.contains(&(*r.data() / 2, *ch.data() / 2)));
+            }
         }
     }
 }
