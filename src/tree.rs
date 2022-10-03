@@ -215,7 +215,8 @@ impl<D: Clone + Default> Path<D> {
 
     pub fn children(&self) -> Vec<Self> {
         let mut res = Vec::new();
-        for c in self.path.node_vec.last().unwrap().iter_children() {
+        let iter = self.path.node_vec.last().unwrap().iter_children();
+        for c in iter {
             let mut new_path = self.path.node_vec.clone();
             new_path.push(c);
 
@@ -252,6 +253,23 @@ impl<D: Clone + Default> Path<D> {
             Some(path) => Self { path: Arc::new(path) },
             None => self.clone(),
         }
+    }
+
+    fn flatten_recursive(node: &Self, res: &mut Vec<Self>) {
+        res.push(node.clone());
+        for c in node.children() {
+            res.push(c.clone());
+        }
+
+        for c in node.children() {
+            Self::flatten_recursive(&c, res);
+        }
+    }
+
+    pub fn flatten(&self) -> Vec<Self> {
+        let mut res = Vec::new();
+        Self::flatten_recursive(&self, &mut res);
+        res
     }
 }
 
