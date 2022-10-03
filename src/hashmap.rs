@@ -312,7 +312,12 @@ impl<'a, K: Clone + Eq + Hashable, V: Clone> std::iter::Iterator for Iter<'a, K,
 
             HashMapNode::One(_s, k, v) => {
                 // we only enter this one if it's in the root!
-                Some((k.clone(), v.clone()))
+                if self.current.idx == 0 {
+                    self.current.idx += 1;
+                    Some((k.clone(), v.clone()))
+                } else {
+                    None
+                }
             }
 
             HashMapNode::Node(size, entries) => {
@@ -504,6 +509,16 @@ mod tests {
         assert_eq!(v.len(), sorted.len());
         for i in 0..sorted.len() {
             assert_eq!(sorted[i], v[i].0);
+        }
+    }
+
+    #[test]
+    fn iter_1() {
+        let mut n = HashMap::empty();
+        n = n.insert(1, 1);
+        for (k, v) in n.iter() {
+            assert_eq!(k, 1);
+            assert_eq!(v, 1);
         }
     }
 }

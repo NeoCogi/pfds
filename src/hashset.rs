@@ -299,7 +299,12 @@ impl<'a, E: Clone + Eq + Hashable> std::iter::Iterator for Iter<'a, E> {
 
             HashSetNode::One(_k, v) => {
                 // we only enter this one if it's in the root!
-                Some(v.clone())
+                if self.current.idx == 0 {
+                    self.current.idx += 1;
+                    Some(v.clone())
+                } else {
+                    None
+                }
             }
 
             HashSetNode::Node(size, entries) => {
@@ -462,6 +467,15 @@ mod tests {
         assert_eq!(v.len(), sorted.len());
         for i in 0..sorted.len() {
             assert_eq!(sorted[i], v[i]);
+        }
+    }
+
+    #[test]
+    fn iter_1() {
+        let mut n = HashSet::empty();
+        n = n.insert(1);
+        for c in n.iter() {
+            assert_eq!(c, 1);
         }
     }
 }
