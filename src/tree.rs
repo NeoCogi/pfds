@@ -63,9 +63,14 @@ impl<D: Clone + Default> Node<D> {
         // TODO: using while let Some(c) = self.0.children.iter() seems to make this hangs: Investigate!!!!
         for c in self.0.children.iter() {
             let new_child = c.apply_recursive(f.clone());
-            changed |= new_child.is_some();
-            children = children.insert(new_child.unwrap());
+            if new_child.is_some() {
+                changed |= new_child.is_some();
+                children = children.insert(new_child.unwrap());
+            } else {
+                children = children.insert(c);
+            }
         }
+
         let children = if changed { children } else { self.0.children.clone() };
 
         let new_data = (*f)(self.data());
@@ -162,22 +167,36 @@ impl<D: Clone + Default> PathPriv<D> {
         self.node_vec.last().unwrap().clone()
     }
 
-    fn apply<F: FnOnce(&D) -> Option<D>>(&self, f: F) -> Option<Self> {
-        self.node().apply(f).map(|x| {
-            let mut node_vec = self.node_vec.clone();
-            node_vec[self.node_vec.len() - 1] = x;
+    fn propagate_last_node_change(&self, node: Node<D>) -> Arc<Self> {
+        let new_child = node;
+        let mut new_path = vec![new_child.clone()];
+        let len = self.node_vec.len();
+        for i in 0..len - 1 {
+            let parent = &self.node_vec[len - i - 2];
+            let mut children = parent.0.children.insert(new_path[i].clone());
+            children.remove(self.node_vec[len - i - 1].clone()); // remove the old child node;
+            children = if i != 0 {
+                children.remove(self.node_vec[len - i].clone()) // remove the old node (old parent) after inserting the new modified one
+            } else {
+                children
+            };
 
-            Self { node_vec }
-        })
+            let new_parent = Node(Arc::new(NodePriv {
+                data: parent.0.data.clone(),
+                children,
+            }));
+            new_path.push(new_parent.clone());
+        }
+        new_path.reverse();
+        Arc::new(Self { node_vec: new_path })
     }
 
-    fn apply_recursive<F: Fn(&D) -> Option<D>>(&self, f: F) -> Option<Self> {
-        self.node().apply_recursive(Arc::new(f)).map(|x| {
-            let mut node_vec = self.node_vec.clone();
-            node_vec[self.node_vec.len() - 1] = x;
+    fn apply<F: FnOnce(&D) -> Option<D>>(&self, f: F) -> Option<Arc<Self>> {
+        self.node().apply(f).map(|n| self.propagate_last_node_change(n))
+    }
 
-            Self { node_vec }
-        })
+    fn apply_recursive<F: Fn(&D) -> Option<D>>(&self, f: F) -> Option<Arc<Self>> {
+        self.node().apply_recursive(Arc::new(f)).map(|n| self.propagate_last_node_change(n))
     }
 }
 
@@ -243,23 +262,20 @@ impl<D: Clone + Default> Path<D> {
 
     pub fn apply<F: FnOnce(&D) -> Option<D>>(&self, f: F) -> Self {
         match self.path.apply(f) {
-            Some(path) => Self { path: Arc::new(path) },
+            Some(path) => Self { path },
             None => self.clone(),
         }
     }
 
     pub fn apply_recursive<F: Fn(&D) -> Option<D>>(&self, f: F) -> Self {
         match self.path.apply_recursive(f) {
-            Some(path) => Self { path: Arc::new(path) },
+            Some(path) => Self { path },
             None => self.clone(),
         }
     }
 
     fn flatten_recursive(node: &Self, res: &mut Vec<Self>) {
         res.push(node.clone());
-        for c in node.children() {
-            res.push(c.clone());
-        }
 
         for c in node.children() {
             Self::flatten_recursive(&c, res);
@@ -270,6 +286,10 @@ impl<D: Clone + Default> Path<D> {
         let mut res = Vec::new();
         Self::flatten_recursive(&self, &mut res);
         res
+    }
+
+    pub fn len(&self) -> usize {
+        self.path.node_vec.len()
     }
 }
 
