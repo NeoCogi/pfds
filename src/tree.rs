@@ -86,6 +86,39 @@ impl<D: Clone + Default> Node<D> {
             None
         }
     }
+
+    fn apply_acc_recursive<Acc, F: Fn(&Acc, &D) -> (Acc, Option<D>)>(&self, acc: &Acc, f: Arc<F>) -> Option<Self> {
+        let mut parent_changed = false;
+        let mut children_changed = false;
+        let mut children = HashSet::empty();
+
+        let (new_acc, new_data) = (*f)(acc, self.data());
+        parent_changed |= new_data.is_some();
+
+        // TODO: using while let Some(c) = self.0.children.iter() seems to make this hangs: Investigate!!!!
+        for c in self.0.children.iter() {
+            let new_child = c.apply_acc_recursive(&new_acc, f.clone());
+            if new_child.is_some() {
+                children_changed |= new_child.is_some();
+                children = children.insert(new_child.unwrap());
+            } else {
+                children = children.insert(c);
+            }
+        }
+
+        let children = if children_changed { children } else { self.0.children.clone() };
+
+        let data = match new_data {
+            Some(data) => data,
+            None => self.0.data.clone(),
+        };
+
+        if children_changed || parent_changed {
+            Some(Self(Arc::new(NodePriv { data, children })))
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -197,6 +230,12 @@ impl<D: Clone + Default> PathPriv<D> {
 
     fn apply_recursive<F: Fn(&D) -> Option<D>>(&self, f: F) -> Option<Arc<Self>> {
         self.node().apply_recursive(Arc::new(f)).map(|n| self.propagate_last_node_change(n))
+    }
+
+    fn apply_acc_recursive<Acc, F: Fn(&Acc, &D) -> (Acc, Option<D>)>(&self, initial: &Acc, f: F) -> Option<Arc<Self>> {
+        self.node()
+            .apply_acc_recursive(initial, Arc::new(f))
+            .map(|n| self.propagate_last_node_change(n))
     }
 }
 
