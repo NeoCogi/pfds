@@ -1,32 +1,30 @@
-use crate::{HashMap, HashSet, Hashable};
-use std::marker::PhantomData;
+use crate::{HashSet, Hashable};
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 
 #[derive(Clone)]
-struct Node<D: Clone + Default>(Arc<NodePriv<D>>);
+struct Node<D: Clone>(Arc<NodePriv<D>>);
 
 #[derive(Clone)]
-struct NodePriv<D: Clone + Default> {
+struct NodePriv<D: Clone> {
     data: D,
     children: HashSet<Node<D>>,
 }
 
-impl<D: Clone + Default> Hashable for Node<D> {
+impl<D: Clone> Hashable for Node<D> {
     fn hash(&self) -> u64 {
         Arc::as_ptr(&self.0) as usize as u64
     }
 }
 
-impl<D: Clone + Default> PartialEq for Node<D> {
+impl<D: Clone> PartialEq for Node<D> {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
-impl<D: Clone + Default> Eq for Node<D> {}
+impl<D: Clone> Eq for Node<D> {}
 
-impl<D: Clone + Default> Node<D> {
+impl<D: Clone> Node<D> {
     pub fn data(&self) -> &D {
         &self.0.data
     }
@@ -122,15 +120,15 @@ impl<D: Clone + Default> Node<D> {
 }
 
 #[derive(Clone)]
-struct PathPriv<D: Clone + Default> {
+struct PathPriv<D: Clone> {
     node_vec: Vec<Node<D>>,
 }
 
-impl<D: Clone + Default> PathPriv<D> {
-    pub fn empty() -> Arc<Self> {
+impl<D: Clone> PathPriv<D> {
+    pub fn new(data: D) -> Arc<Self> {
         Arc::new(Self {
             node_vec: vec![Node(Arc::new(NodePriv {
-                data: D::default(),
+                data,
                 children: HashSet::empty(),
             }))],
         })
@@ -240,13 +238,15 @@ impl<D: Clone + Default> PathPriv<D> {
 }
 
 #[derive(Clone)]
-pub struct Path<D: Clone + Default> {
+pub struct Path<D: Clone> {
     path: Arc<PathPriv<D>>,
 }
 
-impl<D: Clone + Default> Path<D> {
-    pub fn empty() -> Self {
-        Self { path: PathPriv::empty() }
+impl<D: Clone> Path<D> {
+    pub fn new(root_data: D) -> Self {
+        Self {
+            path: PathPriv::new(root_data),
+        }
     }
 
     pub fn add_node(&self, data: D) -> Self {
@@ -332,7 +332,7 @@ impl<D: Clone + Default> Path<D> {
     }
 }
 
-impl<D: Clone + Default> PartialEq for Path<D> {
+impl<D: Clone> PartialEq for Path<D> {
     fn eq(&self, other: &Self) -> bool {
         if !Arc::ptr_eq(&self.path, &other.path) {
             // check if the path length are different
@@ -354,7 +354,7 @@ impl<D: Clone + Default> PartialEq for Path<D> {
     }
 }
 
-impl<D: Clone + Default> Eq for Path<D> {}
+impl<D: Clone> Eq for Path<D> {}
 
 #[cfg(test)]
 mod tests {
@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn add_roots() {
-        let mut tree = Path::empty();
+        let mut tree = Path::new(0);
         for i in 0..128 {
             let t = tree.add_node(i);
             tree = t.parent();
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn add_children() {
-        let mut tree = Path::empty();
+        let mut tree = Path::new(0);
         let mut cs = std::collections::HashSet::new();
         for i in 0..128 {
             let node = tree.add_node(i);
@@ -423,7 +423,7 @@ mod tests {
 
     #[test]
     fn remove_roots() {
-        let mut tree = Path::empty();
+        let mut tree = Path::new(0);
         for i in 0..128 {
             let t = tree.add_node(i);
             tree = t.root();
@@ -457,7 +457,7 @@ mod tests {
 
     #[test]
     fn remove_roots_and_nodes() {
-        let mut tree = Path::empty();
+        let mut tree = Path::new(0);
         let mut cs = std::collections::HashSet::new();
         for i in 0..128 {
             let node = tree.add_node(i);
@@ -532,7 +532,7 @@ mod tests {
 
     #[test]
     fn apply_roots() {
-        let mut tree = Path::empty();
+        let mut tree = Path::new(0);
         for i in 0..128 {
             let t = tree.add_node(i);
             tree = t.parent();
@@ -555,7 +555,7 @@ mod tests {
 
     #[test]
     fn apply_recursive_on_roots() {
-        let mut tree = Path::empty();
+        let mut tree = Path::new(0);
         for i in 0..128 {
             let t = tree.add_node(i);
             tree = t.parent();
@@ -578,7 +578,7 @@ mod tests {
 
     #[test]
     fn apply_recursive_children() {
-        let mut tree = Path::empty();
+        let mut tree = Path::new(0);
         let mut cs = std::collections::HashSet::new();
         for i in 0..128 {
             let node = tree.add_node(i);
