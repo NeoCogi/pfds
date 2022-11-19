@@ -117,6 +117,28 @@ impl<D: Clone> Node<D> {
             None
         }
     }
+
+    ///
+    /// Returns a new tree containing only the nodes for which the given predicate "f" returns "true"
+    ///
+    fn filter_recursive<F: Fn(&D) -> bool>(&self, f: Arc<F>) -> Option<Self> {
+        match f(self.data()) {
+            true => {
+                let mut children = HashSet::empty();
+                for c in self.iter_children() {
+                    match c.filter_recursive(f.clone()) {
+                        Some(cc) => children = children.insert(cc),
+                        None => (),
+                    }
+                }
+                Some(Self(Arc::new(NodePriv {
+                    data: self.data().clone(),
+                    children,
+                })))
+            }
+            false => None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -165,7 +187,8 @@ impl<D: Clone> PathPriv<D> {
     }
 
     pub fn remove_node(&self) -> Arc<Self> {
-        assert!(self.node_vec.len() >= 2);
+        assert!(self.node_vec.len() > 1);
+
         let mut new_path: Vec<Node<D>> = Vec::new();
         let len = self.node_vec.len();
         for i in 0..len - 1 {
@@ -234,6 +257,10 @@ impl<D: Clone> PathPriv<D> {
         self.node()
             .apply_acc_recursive(initial, Arc::new(f))
             .map(|n| self.propagate_last_node_change(n))
+    }
+
+    fn filter_recursive<F: Fn(&D) -> bool>(&self, f: F) -> Option<Arc<Self>> {
+        self.node().filter_recursive(Arc::new(f)).map(|n| self.propagate_last_node_change(n))
     }
 }
 
@@ -329,6 +356,13 @@ impl<D: Clone> Path<D> {
 
     pub fn len(&self) -> usize {
         self.path.node_vec.len()
+    }
+
+    pub fn filter_recursive<F: Fn(&D) -> bool>(&self, f: F) -> Option<Self> {
+        match self.path.filter_recursive(f) {
+            Some(path) => Some(Self { path }),
+            None => None,
+        }
     }
 }
 
