@@ -1,9 +1,12 @@
 [package]
 name = "pfds"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2018"
 license = "BSD-3-Clause"
-authors = ["Raja Lehtihet <raja.lehtihet@gmail.com>", "Wael El Oraiby <wael.eloraiby@gmail.com>"]
+authors = [
+    "Raja Lehtihet <raja.lehtihet@gmail.com>",
+    "Wael El Oraiby <wael.eloraiby@gmail.com>",
+]
 description = "Purely Functional Data Structures"
 repository = "https://github.com/NeoCogi/pfds"
 readme = "README.md"
