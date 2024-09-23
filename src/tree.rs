@@ -1,5 +1,10 @@
 use crate::{HashSet, Hashable};
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
+
+pub trait TreeAcc<D: Clone> {
+    fn push(&mut self, data: &D);
+    fn pop(&mut self);
+}
 
 #[derive(Clone)]
 struct Node<D: Clone>(Arc<NodePriv<D>>);
@@ -29,7 +34,7 @@ impl<D: Clone> Node<D> {
         &self.0.data
     }
 
-    pub fn iter_children<'a>(&self) -> crate::hashset::Iter<'a, Self> {
+    pub fn iter_children<'a>(&self) -> crate::hashset::HSIter<'a, Self> {
         self.0.children.iter()
     }
 
@@ -50,10 +55,6 @@ impl<D: Clone> Node<D> {
         })
     }
 
-    fn apply_data<F: FnOnce(&D) -> Option<D>>(&self, f: F) -> Option<D> {
-        f(self.data())
-    }
-
     fn apply_recursive<F: Fn(&D) -> Option<D>>(&self, f: Arc<F>) -> Option<Self> {
         let mut changed = false;
         let mut children = HashSet::empty();
@@ -69,7 +70,11 @@ impl<D: Clone> Node<D> {
             }
         }
 
-        let children = if changed { children } else { self.0.children.clone() };
+        let children = if changed {
+            children
+        } else {
+            self.0.children.clone()
+        };
 
         let new_data = (*f)(self.data());
         changed |= new_data.is_some();
@@ -85,7 +90,30 @@ impl<D: Clone> Node<D> {
         }
     }
 
-    fn apply_acc_recursive<Acc, F: Fn(&Acc, &D) -> (Acc, Option<D>)>(&self, acc: &Acc, f: Arc<F>) -> Option<Self> {
+    // breath first
+    fn iter_recursive<F: Fn(&D)>(&self, f: Arc<F>) {
+        (*f)(self.data());
+        for c in self.0.children.iter() {
+            c.iter_recursive(f.clone());
+        }
+    }
+
+    // breath first
+    fn iter_acc_recursive<Acc: TreeAcc<D>, F: Fn(&mut Acc, &D)>(&self, init: &mut Acc, f: Arc<F>) {
+        init.push(self.data());
+        for c in self.0.children.iter() {
+            c.iter_acc_recursive(init, f.clone());
+        }
+
+        (*f)(init, self.data());
+        init.pop();
+    }
+
+    fn apply_acc_recursive<Acc, F: Fn(&Acc, &D) -> (Acc, Option<D>)>(
+        &self,
+        acc: &Acc,
+        f: Arc<F>,
+    ) -> Option<Self> {
         let mut parent_changed = false;
         let mut children_changed = false;
         let mut children = HashSet::empty();
@@ -104,7 +132,11 @@ impl<D: Clone> Node<D> {
             }
         }
 
-        let children = if children_changed { children } else { self.0.children.clone() };
+        let children = if children_changed {
+            children
+        } else {
+            self.0.children.clone()
+        };
 
         let data = match new_data {
             Some(data) => data,
@@ -159,7 +191,10 @@ impl<D: Clone> PathPriv<D> {
     pub fn add_node(&self, data: D) -> Arc<Self> {
         assert!(self.node_vec.len() >= 1);
         for i in 1..self.node_vec.len() {
-            assert!(self.node_vec[i - 1].0.children.exist(self.node_vec[i].clone()));
+            assert!(self.node_vec[i - 1]
+                .0
+                .children
+                .exist(self.node_vec[i].clone()));
         }
 
         let new_child = Node::new_with_data(data);
@@ -246,21 +281,35 @@ impl<D: Clone> PathPriv<D> {
     }
 
     fn apply<F: FnOnce(&D) -> Option<D>>(&self, f: F) -> Option<Arc<Self>> {
-        self.node().apply(f).map(|n| self.propagate_last_node_change(n))
+        self.node()
+            .apply(f)
+            .map(|n| self.propagate_last_node_change(n))
     }
 
     fn apply_recursive<F: Fn(&D) -> Option<D>>(&self, f: F) -> Option<Arc<Self>> {
-        self.node().apply_recursive(Arc::new(f)).map(|n| self.propagate_last_node_change(n))
+        self.node()
+            .apply_recursive(Arc::new(f))
+            .map(|n| self.propagate_last_node_change(n))
     }
 
-    fn apply_acc_recursive<Acc, F: Fn(&Acc, &D) -> (Acc, Option<D>)>(&self, initial: &Acc, f: F) -> Option<Arc<Self>> {
+    fn apply_acc_recursive<Acc, F: Fn(&Acc, &D) -> (Acc, Option<D>)>(
+        &self,
+        initial: &Acc,
+        f: F,
+    ) -> Option<Arc<Self>> {
         self.node()
             .apply_acc_recursive(initial, Arc::new(f))
             .map(|n| self.propagate_last_node_change(n))
     }
 
     fn filter_recursive<F: Fn(&D) -> bool>(&self, f: F) -> Option<Arc<Self>> {
-        self.node().filter_recursive(Arc::new(f)).map(|n| self.propagate_last_node_change(n))
+        self.node()
+            .filter_recursive(Arc::new(f))
+            .map(|n| self.propagate_last_node_change(n))
+    }
+
+    fn iter_acc_recursive<Acc: TreeAcc<D>, F: Fn(&mut Acc, &D)>(&self, init: &mut Acc, f: F) {
+        self.node().iter_acc_recursive(init, Arc::new(f));
     }
 }
 
@@ -283,7 +332,9 @@ impl<D: Clone> Path<D> {
     }
 
     pub fn remove_node(&self) -> Self {
-        Self { path: self.path.remove_node() }
+        Self {
+            path: self.path.remove_node(),
+        }
     }
 
     pub fn root(&self) -> Self {
@@ -316,7 +367,9 @@ impl<D: Clone> Path<D> {
         let len = self.path.node_vec.len();
         let parent_path = Vec::from(&self.path.node_vec[0..len - 1]);
         Self {
-            path: Arc::new(PathPriv { node_vec: parent_path }),
+            path: Arc::new(PathPriv {
+                node_vec: parent_path,
+            }),
         }
     }
 
@@ -364,6 +417,10 @@ impl<D: Clone> Path<D> {
             None => None,
         }
     }
+
+    pub fn iter_acc_recursive<Acc: TreeAcc<D>, F: Fn(&mut Acc, &D)>(&self, init: &mut Acc, f: F) {
+        self.path.iter_acc_recursive(init, f);
+    }
 }
 
 impl<D: Clone> PartialEq for Path<D> {
@@ -390,10 +447,17 @@ impl<D: Clone> PartialEq for Path<D> {
 
 impl<D: Clone> Eq for Path<D> {}
 
+impl<D: Clone> Deref for Path<D> {
+    type Target = D;
+    fn deref(&self) -> &Self::Target {
+        self.data()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::ops::Sub;
     use crate::tree::*;
+    use std::ops::Sub;
 
     static mut SEED: i64 = 777;
 

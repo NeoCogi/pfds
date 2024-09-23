@@ -1,4 +1,3 @@
-use std::hash::Hash;
 use std::marker::PhantomData;
 //
 // Copyright 2021-Present (c) Raja Lehtihet & Wael El Oraiby
@@ -64,7 +63,9 @@ impl<K: Hashable + Eq + Clone> HashSetNode<K> {
         // forget(s);
         // res
 
-        unsafe { (&*(&MaybeUninit::new(s) as *const _ as *const MaybeUninit<_>)).assume_init_read() }
+        unsafe {
+            (&*(&MaybeUninit::new(s) as *const _ as *const MaybeUninit<_>)).assume_init_read()
+        }
     }
 
     fn insert(h: &N<K>, l: u32, k: K) -> Option<N<K>> {
@@ -173,7 +174,10 @@ impl<K: Hashable + Eq + Clone> HashSet<K> {
     /// create and return a new empty set
     ///
     pub fn empty() -> Self {
-        Self { n: N::empty(), count: 0 }
+        Self {
+            n: N::empty(),
+            count: 0,
+        }
     }
 
     ///
@@ -249,10 +253,13 @@ impl<K: Hashable + Eq + Clone> HashSet<K> {
     ///
     /// returns an iterator
     ///
-    pub fn iter<'a>(&self) -> Iter<'a, K> {
-        Iter {
+    pub fn iter<'a>(&self) -> HSIter<'a, K> {
+        HSIter {
             stack: Vec::new(),
-            current: Pointer { node: self.n.clone(), idx: 0 },
+            current: Pointer {
+                node: self.n.clone(),
+                idx: 0,
+            },
             _phantom: PhantomData::default(),
         }
     }
@@ -264,16 +271,21 @@ struct Pointer<E: Clone + Eq + Hashable> {
     node: H<E>,
 }
 
-pub struct Iter<'a, E: Clone + Eq + Hashable> {
+pub struct HSIter<'a, E: Clone + Eq + Hashable> {
     stack: Vec<Pointer<E>>,
     current: Pointer<E>,
     _phantom: PhantomData<&'a E>,
 }
 
-impl<'a, E: Clone + Eq + Hashable> Iter<'a, E> {
+impl<'a, E: Clone + Eq + Hashable> HSIter<'a, E> {
     fn pop(&mut self) {
         match self.stack.pop() {
-            Some(Pointer { idx: i, node: n }) => self.current = Pointer { idx: i + 1, node: n },
+            Some(Pointer { idx: i, node: n }) => {
+                self.current = Pointer {
+                    idx: i + 1,
+                    node: n,
+                }
+            }
 
             None => {
                 self.current = Pointer {
@@ -285,7 +297,7 @@ impl<'a, E: Clone + Eq + Hashable> Iter<'a, E> {
     }
 }
 
-impl<'a, E: Clone + Eq + Hashable> std::iter::Iterator for Iter<'a, E> {
+impl<'a, E: Clone + Eq + Hashable> std::iter::Iterator for HSIter<'a, E> {
     type Item = E;
 
     fn next(&mut self) -> Option<Self::Item> {

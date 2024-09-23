@@ -50,7 +50,8 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMapNode<K, V> {
     }
 
     fn new_empty_slice() -> [N<K, V>; TRIE_SIZE] {
-        let mut s: [MaybeUninit<N<K, V>>; TRIE_SIZE] = unsafe { MaybeUninit::uninit().assume_init() };
+        let mut s: [MaybeUninit<N<K, V>>; TRIE_SIZE] =
+            unsafe { MaybeUninit::uninit().assume_init() };
         for i in s.iter_mut().take(TRIE_SIZE) {
             *i = MaybeUninit::new(N::Empty);
         }
@@ -62,7 +63,9 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMapNode<K, V> {
         // forget(s);
         // res
 
-        unsafe { (&*(&MaybeUninit::new(s) as *const _ as *const MaybeUninit<_>)).assume_init_read() }
+        unsafe {
+            (&*(&MaybeUninit::new(s) as *const _ as *const MaybeUninit<_>)).assume_init_read()
+        }
     }
 
     fn insert(h: &N<K, V>, l: u32, k: K, v: V) -> Option<N<K, V>> {
@@ -183,7 +186,10 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMap<K, V> {
     /// create and return a new empty map
     ///
     pub fn empty() -> Self {
-        Self { n: N::empty(), count: 0 }
+        Self {
+            n: N::empty(),
+            count: 0,
+        }
     }
 
     ///
@@ -262,10 +268,13 @@ impl<K: Hashable + Eq + Clone, V: Clone> HashMap<K, V> {
     ///
     /// returns an iterator
     ///
-    pub fn iter<'a>(&self) -> Iter<'a, K, V> {
-        Iter {
+    pub fn iter<'a>(&self) -> HMIter<'a, K, V> {
+        HMIter {
             stack: Vec::new(),
-            current: Pointer { node: self.n.clone(), idx: 0 },
+            current: Pointer {
+                node: self.n.clone(),
+                idx: 0,
+            },
             _phantom: PhantomData::default(),
         }
     }
@@ -277,16 +286,21 @@ struct Pointer<K: Clone + Eq + Hashable, V: Clone> {
     node: H<K, V>,
 }
 
-pub struct Iter<'a, K: Clone + Eq + Hashable, V: Clone> {
+pub struct HMIter<'a, K: Clone + Eq + Hashable, V: Clone> {
     stack: Vec<Pointer<K, V>>,
     current: Pointer<K, V>,
     _phantom: PhantomData<&'a (K, V)>,
 }
 
-impl<'a, K: Clone + Eq + Hashable, V: Clone> Iter<'a, K, V> {
+impl<'a, K: Clone + Eq + Hashable, V: Clone> HMIter<'a, K, V> {
     fn pop(&mut self) {
         match self.stack.pop() {
-            Some(Pointer { idx: i, node: n }) => self.current = Pointer { idx: i + 1, node: n },
+            Some(Pointer { idx: i, node: n }) => {
+                self.current = Pointer {
+                    idx: i + 1,
+                    node: n,
+                }
+            }
 
             None => {
                 self.current = Pointer {
@@ -298,7 +312,7 @@ impl<'a, K: Clone + Eq + Hashable, V: Clone> Iter<'a, K, V> {
     }
 }
 
-impl<'a, K: Clone + Eq + Hashable, V: Clone> std::iter::Iterator for Iter<'a, K, V> {
+impl<'a, K: Clone + Eq + Hashable, V: Clone> std::iter::Iterator for HMIter<'a, K, V> {
     type Item = (K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
