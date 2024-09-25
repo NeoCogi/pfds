@@ -55,13 +55,13 @@ impl<D: Clone> Node<D> {
         })
     }
 
-    fn apply_recursive<F: Fn(&D) -> Option<D>>(&self, f: Arc<F>) -> Option<Self> {
+    fn apply_recursive<F: FnMut(&D) -> Option<D>>(&self, f: &mut F) -> Option<Self> {
         let mut changed = false;
         let mut children = HashSet::empty();
 
         // TODO: using while let Some(c) = self.0.children.iter() seems to make this hangs: Investigate!!!!
         for c in self.0.children.iter() {
-            let new_child = c.apply_recursive(f.clone());
+            let new_child = c.apply_recursive(f);
             if new_child.is_some() {
                 changed |= new_child.is_some();
                 children = children.insert(new_child.unwrap());
@@ -76,7 +76,7 @@ impl<D: Clone> Node<D> {
             self.0.children.clone()
         };
 
-        let new_data = (*f)(self.data());
+        let new_data = f(self.data());
         changed |= new_data.is_some();
         let data = match new_data {
             Some(data) => data,
@@ -88,25 +88,6 @@ impl<D: Clone> Node<D> {
         } else {
             None
         }
-    }
-
-    // breath first
-    fn iter_recursive<F: Fn(&D)>(&self, f: Arc<F>) {
-        (*f)(self.data());
-        for c in self.0.children.iter() {
-            c.iter_recursive(f.clone());
-        }
-    }
-
-    // breath first
-    fn iter_acc_recursive<Acc: TreeAcc<D>, F: Fn(&mut Acc, &D)>(&self, init: &mut Acc, f: Arc<F>) {
-        init.push(self.data());
-        for c in self.0.children.iter() {
-            c.iter_acc_recursive(init, f.clone());
-        }
-
-        (*f)(init, self.data());
-        init.pop();
     }
 
     fn apply_acc_recursive<Acc, F: Fn(&Acc, &D) -> (Acc, Option<D>)>(
@@ -243,7 +224,6 @@ impl<D: Clone> PathPriv<D> {
         }
 
         new_path.reverse();
-        let root = new_path[0].clone();
         Arc::new(Self { node_vec: new_path })
     }
 
@@ -286,19 +266,9 @@ impl<D: Clone> PathPriv<D> {
             .map(|n| self.propagate_last_node_change(n))
     }
 
-    fn apply_recursive<F: Fn(&D) -> Option<D>>(&self, f: F) -> Option<Arc<Self>> {
+    fn apply_recursive<F: FnMut(&D) -> Option<D>>(&self, f: &mut F) -> Option<Arc<Self>> {
         self.node()
-            .apply_recursive(Arc::new(f))
-            .map(|n| self.propagate_last_node_change(n))
-    }
-
-    fn apply_acc_recursive<Acc, F: Fn(&Acc, &D) -> (Acc, Option<D>)>(
-        &self,
-        initial: &Acc,
-        f: F,
-    ) -> Option<Arc<Self>> {
-        self.node()
-            .apply_acc_recursive(initial, Arc::new(f))
+            .apply_recursive(f)
             .map(|n| self.propagate_last_node_change(n))
     }
 
@@ -306,10 +276,6 @@ impl<D: Clone> PathPriv<D> {
         self.node()
             .filter_recursive(Arc::new(f))
             .map(|n| self.propagate_last_node_change(n))
-    }
-
-    fn iter_acc_recursive<Acc: TreeAcc<D>, F: Fn(&mut Acc, &D)>(&self, init: &mut Acc, f: F) {
-        self.node().iter_acc_recursive(init, Arc::new(f));
     }
 }
 
@@ -386,8 +352,8 @@ impl<D: Clone> Path<D> {
         }
     }
 
-    pub fn apply_recursive<F: Fn(&D) -> Option<D>>(&self, f: F) -> Self {
-        match self.path.apply_recursive(f) {
+    pub fn apply_recursive<F: FnMut(&D) -> Option<D>>(&self, mut f: F) -> Self {
+        match self.path.apply_recursive(&mut f) {
             Some(path) => Self { path },
             None => self.clone(),
         }
@@ -418,8 +384,31 @@ impl<D: Clone> Path<D> {
         }
     }
 
-    pub fn iter_acc_recursive<Acc: TreeAcc<D>, F: Fn(&mut Acc, &D)>(&self, init: &mut Acc, f: F) {
-        self.path.iter_acc_recursive(init, f);
+    // breath first
+    pub fn iter_acc_recursive<Acc: TreeAcc<D>, F: FnMut(&mut Acc, &Path<D>)>(
+        &self,
+        init: &mut Acc,
+        mut f: F,
+    ) {
+        init.push(self.data());
+        for c in self.children().iter() {
+            c.iter_acc_recursive(init, &mut f);
+        }
+
+        f(init, &self);
+        init.pop();
+    }
+
+    pub fn remove_all_children(&self) -> Self {
+        match self.path.node().0.children.len() {
+            x if x > 0 => {
+                let mut n = (*self.path.node().0).clone();
+                n.children = HashSet::empty();
+                let p = self.path.propagate_last_node_change(Node(Arc::new(n)));
+                Self { path: p }
+            }
+            _ => self.clone(),
+        }
     }
 }
 
@@ -669,7 +658,7 @@ mod tests {
         }
 
         for c in tree.children() {
-            let new_c = c.apply_recursive(&|x: &i32| Some(*x * 2));
+            let new_c = c.apply_recursive(&mut |x: &i32| Some(*x * 2));
             assert_eq!(*c.data() * 2, *new_c.data());
         }
     }
@@ -706,12 +695,34 @@ mod tests {
             }
         }
 
-        let tree_double = tree.apply_recursive(|x| Some(*x * 2));
+        let mut n = 0;
+        let tree_double = tree.apply_recursive(|x| {
+            n = 3;
+            Some(*x * 2)
+        });
+        assert_eq!(n, 3);
 
         for r in tree_double.children() {
             for ch in r.children() {
                 assert!(cs.contains(&(*r.data() / 2, *ch.data() / 2)));
             }
         }
+    }
+
+    #[test]
+    fn test_remove_all_children() {
+        let mut tree = Path::new(0);
+        for i in 1..10 {
+            tree = tree.add_node(i)
+        }
+
+        let n9 = tree.parent();
+        assert_eq!(*n9.data(), 8);
+
+        let n8 = n9.parent();
+        assert_eq!(*n8.data(), 7);
+
+        assert_eq!(n8.children().len(), 1);
+        assert_eq!(n8.remove_all_children().children().len(), 0);
     }
 }
