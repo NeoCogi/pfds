@@ -391,12 +391,21 @@ impl<D: Clone> Path<D> {
         mut f: F,
     ) {
         init.push(self.data());
+
+        f(init, &self);
         for c in self.children().iter() {
             c.iter_acc_recursive(init, &mut f);
         }
 
-        f(init, &self);
         init.pop();
+    }
+
+    // breath first
+    pub fn iter_recursive<F: FnMut(&Path<D>)>(&self, mut f: F) {
+        f(&self);
+        for c in self.children().iter() {
+            c.iter_recursive(&mut f);
+        }
     }
 
     pub fn remove_all_children(&self) -> Self {
@@ -440,6 +449,16 @@ impl<D: Clone> Deref for Path<D> {
     type Target = D;
     fn deref(&self) -> &Self::Target {
         self.data()
+    }
+}
+
+impl<T: Clone> TreeAcc<T> for Vec<T> {
+    fn push(&mut self, data: &T) {
+        self.push(data.clone());
+    }
+
+    fn pop(&mut self) {
+        self.pop();
     }
 }
 
