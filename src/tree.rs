@@ -38,11 +38,8 @@ impl<D: Clone> Node<D> {
         self.0.children.iter()
     }
 
-    fn new_with_data(data: D) -> Self {
-        Self(Arc::new(NodePriv {
-            data,
-            children: HashSet::empty(),
-        }))
+    fn new(data: D, children: HashSet<Node<D>>) -> Self {
+        Self(Arc::new(NodePriv { data, children }))
     }
 
     fn apply<F: FnOnce(&D) -> Option<D>>(&self, f: F) -> Option<Self> {
@@ -152,6 +149,35 @@ impl<D: Clone> Node<D> {
             false => None,
         }
     }
+
+    pub fn map_data<F: FnMut(&D) -> Option<D>>(&self, f: &mut F) -> Option<Self> {
+        let mut children: HashSet<Node<D>> = HashSet::empty();
+        let mut children_changed = false;
+        for c in self.0.children.iter() {
+            children = match c.map_data(f) {
+                Some(d) => {
+                    children_changed = true;
+                    children.insert(d)
+                }
+                None => children.insert(c.clone()),
+            };
+        }
+
+        match f(self.data()) {
+            Some(d) => Some(if children_changed {
+                Node::new(d, children)
+            } else {
+                Node::new(d, self.0.children.clone())
+            }),
+            None => {
+                if children_changed {
+                    Some(Node::new(self.data().clone(), children))
+                } else {
+                    None
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -178,7 +204,7 @@ impl<D: Clone> PathPriv<D> {
                 .exist(self.node_vec[i].clone()));
         }
 
-        let new_child = Node::new_with_data(data);
+        let new_child = Node::new(data, HashSet::empty());
         let mut new_path = vec![new_child.clone()];
         let len = self.node_vec.len();
         for i in 0..len {
@@ -388,23 +414,24 @@ impl<D: Clone> Path<D> {
     pub fn iter_acc_recursive<Acc: TreeAcc<D>, F: FnMut(&mut Acc, &Path<D>)>(
         &self,
         init: &mut Acc,
-        mut f: F,
+        f: &mut F,
     ) {
         init.push(self.data());
 
         f(init, &self);
         for c in self.children().iter() {
-            c.iter_acc_recursive(init, &mut f);
+            c.iter_acc_recursive(init, f);
         }
 
         init.pop();
     }
 
     // breath first
-    pub fn iter_recursive<F: FnMut(&Path<D>)>(&self, mut f: F) {
-        f(&self);
+    #[inline(never)]
+    pub fn iter_recursive<F: FnMut(&Path<D>)>(&self, f: &mut F) {
+        f(self);
         for c in self.children().iter() {
-            c.iter_recursive(&mut f);
+            c.iter_recursive(f);
         }
     }
 
@@ -417,6 +444,15 @@ impl<D: Clone> Path<D> {
                 Self { path: p }
             }
             _ => self.clone(),
+        }
+    }
+
+    pub fn map_data<F: FnMut(&D) -> Option<D>>(&self, mut f: F) -> Self {
+        match self.path.node_vec[self.path.node_vec.len() - 1].map_data(&mut f) {
+            Some(n) => Path {
+                path: self.path.propagate_last_node_change(n),
+            },
+            None => self.clone(),
         }
     }
 }
@@ -435,6 +471,7 @@ impl<D: Clone> PartialEq for Path<D> {
                 }
             }
 
+            println!("warning! slow path equality check");
             // they are equal
             true
         } else {
@@ -743,5 +780,24 @@ mod tests {
 
         assert_eq!(n8.children().len(), 1);
         assert_eq!(n8.remove_all_children().children().len(), 0);
+    }
+
+    #[test]
+    fn test_map_data() {
+        let mut tree = Path::new(0);
+        for i in 1..10 {
+            tree = tree.add_node(i)
+        }
+
+        let n9 = tree.parent();
+        assert_eq!(*n9.data(), 8);
+
+        let n8 = n9.parent();
+        assert_eq!(*n8.data(), 7);
+
+        assert_eq!(n8.children().len(), 1);
+
+        let nn8 = n8.map_data(|_| None);
+        assert!(nn8 == n8);
     }
 }
