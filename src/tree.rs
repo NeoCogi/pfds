@@ -268,13 +268,16 @@ impl<D: Clone> PathPriv<D> {
         let len = self.node_vec.len();
         for i in 0..len - 1 {
             let parent = &self.node_vec[len - i - 2];
-            let mut children = parent.0.children.insert(new_path[i].clone());
-            children.remove(self.node_vec[len - i - 1].clone()); // remove the old child node;
-            children = if i != 0 {
-                children.remove(self.node_vec[len - i].clone()) // remove the old node (old parent) after inserting the new modified one
-            } else {
-                children
-            };
+
+            let children = parent
+                .0
+                .children
+                // remove the old child node;
+                .remove(self.node_vec[len - i - 1].clone())
+                // insert the new child node
+                .insert(new_path[i].clone());
+
+            assert!(parent.0.children.len() == children.len());
 
             let new_parent = Node(Arc::new(NodePriv {
                 data: parent.0.data.clone(),
