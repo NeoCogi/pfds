@@ -58,13 +58,14 @@ impl<D: Clone> Node<D> {
 
         // TODO: using while let Some(c) = self.0.children.iter() seems to make this hangs: Investigate!!!!
         for c in self.0.children.iter() {
-            let new_child = c.apply_recursive(f);
-            if new_child.is_some() {
-                changed |= new_child.is_some();
-                children = children.insert(new_child.unwrap());
-            } else {
-                children = children.insert(c);
-            }
+            let child = match c.apply_recursive(f) {
+                Some(c) => {
+                    changed |= true;
+                    c
+                }
+                None => c,
+            };
+            children = children.insert(child);
         }
 
         let children = if changed {
