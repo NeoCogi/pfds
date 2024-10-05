@@ -88,47 +88,48 @@ impl<D: Clone> Node<D> {
         }
     }
 
-    fn apply_acc_recursive<Acc, F: Fn(&Acc, &D) -> (Acc, Option<D>)>(
+    fn apply_acc_recursive<Acc: TreeAcc<D>, F: FnMut(&mut Acc, &D) -> Option<D>>(
         &self,
-        acc: &Acc,
-        f: Arc<F>,
+        acc: &mut Acc,
+        f: &mut F,
     ) -> Option<Self> {
-        let mut parent_changed = false;
-        let mut children_changed = false;
+        let mut changed = false;
         let mut children = HashSet::empty();
 
-        let (new_acc, new_data) = (*f)(acc, self.data());
-        parent_changed |= new_data.is_some();
+        acc.push(self.data());
+        let new_data = f(acc, self.data());
 
         // TODO: using while let Some(c) = self.0.children.iter() seems to make this hangs: Investigate!!!!
         for c in self.0.children.iter() {
-            let new_child = c.apply_acc_recursive(&new_acc, f.clone());
-            if new_child.is_some() {
-                children_changed |= new_child.is_some();
-                children = children.insert(new_child.unwrap());
-            } else {
-                children = children.insert(c);
-            }
+            let child = match c.apply_acc_recursive(acc, f) {
+                Some(c) => {
+                    changed |= true;
+                    c
+                }
+                None => c,
+            };
+            children = children.insert(child);
         }
 
-        let children = if children_changed {
+        let children = if changed {
             children
         } else {
             self.0.children.clone()
         };
+        acc.pop();
 
+        changed |= new_data.is_some();
         let data = match new_data {
             Some(data) => data,
             None => self.0.data.clone(),
         };
 
-        if children_changed || parent_changed {
+        if changed {
             Some(Self(Arc::new(NodePriv { data, children })))
         } else {
             None
         }
     }
-
     ///
     /// Returns a new tree containing only the nodes for which the given predicate "f" returns "true"
     ///
@@ -302,6 +303,16 @@ impl<D: Clone> PathPriv<D> {
             .map(|n| self.propagate_last_node_change(n))
     }
 
+    fn apply_acc_recursive<Acc: TreeAcc<D>, F: FnMut(&mut Acc, &D) -> Option<D>>(
+        &self,
+        init: &mut Acc,
+        f: &mut F,
+    ) -> Option<Arc<Self>> {
+        self.node()
+            .apply_acc_recursive(init, f)
+            .map(|n| self.propagate_last_node_change(n))
+    }
+
     fn filter_recursive<F: Fn(&D) -> bool>(&self, f: F) -> Option<Arc<Self>> {
         self.node()
             .filter_recursive(Arc::new(f))
@@ -384,6 +395,17 @@ impl<D: Clone> Path<D> {
 
     pub fn apply_recursive<F: FnMut(&D) -> Option<D>>(&self, mut f: F) -> Self {
         match self.path.apply_recursive(&mut f) {
+            Some(path) => Self { path },
+            None => self.clone(),
+        }
+    }
+
+    pub fn apply_acc_recursive<Acc: TreeAcc<D>, F: FnMut(&mut Acc, &D) -> Option<D>>(
+        &self,
+        init: &mut Acc,
+        mut f: F,
+    ) -> Self {
+        match self.path.apply_acc_recursive(init, &mut f) {
             Some(path) => Self { path },
             None => self.clone(),
         }
