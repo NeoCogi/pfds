@@ -28,6 +28,7 @@
 // POSSIBILITY OF SUCH DAMAGE.
 //
 use std::sync::Arc;
+use std::marker::PhantomData;
 
 #[derive(Clone)]
 enum SetNode<K: Clone> {
@@ -194,15 +195,37 @@ impl<K: Clone> SetNode<K> {
     }
 }
 
+/// A persistent (immutable) ordered set data structure.
+/// 
+/// `Set` is implemented as a self-balancing binary search tree (AVL tree)
+/// that maintains elements in sorted order. All operations return
+/// a new set, leaving the original unchanged.
+/// 
+/// # Performance
+/// 
+/// - `insert`: O(log n)
+/// - `remove`: O(log n)
+/// - `exist`: O(log n)
+/// - `len`: O(1) - size is cached
+/// - `height`: O(1) - height is cached
+/// - `to_vec`: O(n) - returns elements in sorted order
 pub struct Set<K: Ord + Clone> {
     size: usize,
     n: N<K>,
 }
 
 impl<K: Ord + Clone> Set<K> {
-    ///
-    /// create and return a new empty set
-    ///
+    /// Creates a new empty set.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Set;
+    /// 
+    /// let set: Set<i32> = Set::empty();
+    /// assert!(set.is_empty());
+    /// assert_eq!(set.len(), 0);
+    /// ```
     pub fn empty() -> Self {
         Self {
             n: empty(),
@@ -210,9 +233,24 @@ impl<K: Ord + Clone> Set<K> {
         }
     }
 
-    ///
-    /// insert a new key and return a new set with the new element added to it
-    ///
+    /// Creates a new set with the given element inserted.
+    /// 
+    /// If the element already exists, the returned set is unchanged.
+    /// This operation is O(log n) and shares structure with the original set.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `k` - The element to insert into the set
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Set;
+    /// 
+    /// let set = Set::empty().insert(5).insert(3).insert(7);
+    /// assert_eq!(set.len(), 3);
+    /// assert!(set.exist(5));
+    /// ```
     pub fn insert(&self, k: K) -> Self {
         Self {
             n: insert(&self.n, k),
@@ -220,9 +258,26 @@ impl<K: Ord + Clone> Set<K> {
         }
     }
 
-    ///
-    /// remove a key and return a new set with the element removed to it
-    ///
+    /// Creates a new set with the given element removed.
+    /// 
+    /// If the element doesn't exist, the returned set is unchanged.
+    /// This operation is O(log n) and shares structure with the original set.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `k` - The element to remove from the set
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Set;
+    /// 
+    /// let set = Set::empty().insert(1).insert(2).insert(3);
+    /// let set2 = set.remove(2);
+    /// assert_eq!(set.len(), 3);  // Original unchanged
+    /// assert_eq!(set2.len(), 2);
+    /// assert!(!set2.exist(2));
+    /// ```
     pub fn remove(&self, k: K) -> Self {
         let size = match find(&self.n, k.clone()) {
             Some(_) => self.size - 1,
@@ -232,41 +287,155 @@ impl<K: Ord + Clone> Set<K> {
         Self { n, size }
     }
 
-    ///
-    /// search for a key and return true if the key exist, false otherwise
-    ///
+    /// Returns true if the set contains the given element.
+    /// 
+    /// This operation is O(log n).
+    /// 
+    /// # Arguments
+    /// 
+    /// * `k` - The element to search for
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Set;
+    /// 
+    /// let set = Set::empty().insert(1).insert(2).insert(3);
+    /// assert!(set.exist(2));
+    /// assert!(!set.exist(4));
+    /// ```
     pub fn exist(&self, k: K) -> bool {
         find(&self.n, k).is_some()
     }
 
-    ///
-    /// walk the list/stack and build a vector of keys and return it
-    ///
+    /// Converts the set to a vector of elements in sorted order.
+    /// 
+    /// This operation is O(n).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Set;
+    /// 
+    /// let set = Set::empty().insert(5).insert(3).insert(7).insert(1);
+    /// let vec = set.to_vec();
+    /// assert_eq!(vec, vec![1, 3, 5, 7]); // Sorted order
+    /// ```
     pub fn to_vec(&self) -> Vec<K> {
         let mut v = Vec::new();
         to_vec(&self.n, &mut v);
         v
     }
 
-    ///
-    /// return the maximum tree height
-    ///
+    /// Returns the height of the balanced tree.
+    /// 
+    /// The height is the length of the longest path from root to leaf.
+    /// This operation is O(1) as height is cached.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Set;
+    /// 
+    /// let set = Set::empty().insert(1).insert(2).insert(3);
+    /// assert!(set.height() > 0);
+    /// ```
     pub fn height(&self) -> usize {
         self.n.height()
     }
 
-    ///
-    /// return true if the set is empty
-    ///
+    /// Returns true if the set is empty.
+    /// 
+    /// This operation is O(1).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Set;
+    /// 
+    /// let empty = Set::<i32>::empty();
+    /// assert!(empty.is_empty());
+    /// 
+    /// let non_empty = empty.insert(1);
+    /// assert!(!non_empty.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.size == 0
     }
 
-    ///
-    /// return the number of elements in the set
-    ///
+    /// Returns the number of elements in the set.
+    /// 
+    /// This operation is O(1) as the size is cached.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Set;
+    /// 
+    /// let set = Set::empty().insert(1).insert(2).insert(3);
+    /// assert_eq!(set.len(), 3);
+    /// ```
     pub fn len(&self) -> usize {
         self.size
+    }
+
+    /// Returns an iterator over the set elements.
+    /// 
+    /// The iterator yields elements in sorted order.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Set;
+    /// 
+    /// let set = Set::empty().insert(5).insert(3).insert(7);
+    /// let collected: Vec<_> = set.iter().collect();
+    /// assert_eq!(collected, vec![3, 5, 7]);
+    /// ```
+    pub fn iter(&self) -> SetIter<K> {
+        let mut stack = Vec::new();
+        if !matches!(self.n.as_ref(), Empty) {
+            stack.push(self.n.clone());
+        }
+        SetIter {
+            stack,
+            _phantom: PhantomData::default(),
+        }
+    }
+}
+
+/// An iterator over the elements of a `Set`.
+/// 
+/// This struct is created by the [`Set::iter`] method.
+/// The iterator yields elements in sorted order.
+pub struct SetIter<'a, K: Ord + Clone> {
+    stack: Vec<N<K>>,
+    _phantom: PhantomData<&'a K>,
+}
+
+impl<'a, K: Ord + Clone> std::iter::Iterator for SetIter<'a, K> {
+    type Item = K;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(node) = self.stack.pop() {
+            match node.as_ref() {
+                Empty => continue,
+                One(k) => return Some(k.clone()),
+                Node(_, left, k, right) => {
+                    // Push right first (will be processed after)
+                    if !matches!(right.as_ref(), Empty) {
+                        self.stack.push(right.clone());
+                    }
+                    // Push current node as One to process the element
+                    self.stack.push(one(k.clone()));
+                    // Push left (will be processed first - in-order traversal)
+                    if !matches!(left.as_ref(), Empty) {
+                        self.stack.push(left.clone());
+                    }
+                }
+            }
+        }
+        None
     }
 }
 
@@ -349,6 +518,28 @@ mod tests {
 
         let v = n.to_vec();
         assert_eq!(v.len(), 0);
+    }
+
+    #[test]
+    fn iter() {
+        let numbers = [5, 10, 3, 120, 4, 9, 27, 1, 45];
+        let sorted = [1, 3, 4, 5, 9, 10, 27, 45, 120];
+        let mut n = Set::empty();
+        for i in numbers {
+            n = n.insert(i);
+        }
+
+        // Test iterator yields elements in sorted order
+        let mut count = 0;
+        for elem in n.iter() {
+            assert_eq!(elem, sorted[count]);
+            count += 1;
+        }
+        assert_eq!(count, sorted.len());
+
+        // Test that we can iterate multiple times (persistent data structure)
+        let collected: Vec<i32> = n.iter().collect();
+        assert_eq!(collected, sorted);
     }
 
     #[test]

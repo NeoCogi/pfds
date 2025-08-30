@@ -29,6 +29,7 @@
 //
 
 use std::sync::Arc;
+use std::marker::PhantomData;
 
 #[derive(Clone)]
 enum MapNode<K: Clone, V: Clone> {
@@ -213,15 +214,38 @@ impl<K: Clone, V: Clone> MapNode<K, V> {
     }
 }
 
+/// A persistent (immutable) ordered map data structure.
+/// 
+/// `Map` is implemented as a self-balancing binary search tree (AVL tree)
+/// that maintains key-value pairs in sorted order by key. All operations
+/// return a new map, leaving the original unchanged.
+/// 
+/// # Performance
+/// 
+/// - `insert`: O(log n)
+/// - `remove`: O(log n)
+/// - `find`: O(log n)
+/// - `exist`: O(log n)
+/// - `len`: O(1) - size is cached
+/// - `height`: O(1) - height is cached
+/// - `to_vec`: O(n) - returns pairs in sorted order by key
 pub struct Map<K: Ord + Clone, V: Clone> {
     size: usize,
     n: N<K, V>,
 }
 
 impl<K: Ord + Clone, V: Clone> Map<K, V> {
-    ///
-    /// create and return a new empty map
-    ///
+    /// Creates a new empty map.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Map;
+    /// 
+    /// let map: Map<i32, String> = Map::empty();
+    /// assert!(map.is_empty());
+    /// assert_eq!(map.len(), 0);
+    /// ```
     pub fn empty() -> Self {
         Self {
             n: S::empty(),
@@ -229,9 +253,25 @@ impl<K: Ord + Clone, V: Clone> Map<K, V> {
         }
     }
 
-    ///
-    /// create and return a new map containing the new key, value pair
-    ///
+    /// Creates a new map with the given key-value pair inserted.
+    /// 
+    /// If the key already exists, its value is replaced.
+    /// This operation is O(log n) and shares structure with the original map.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `k` - The key to insert
+    /// * `v` - The value associated with the key
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Map;
+    /// 
+    /// let map = Map::empty().insert("a", 1).insert("b", 2).insert("c", 3);
+    /// assert_eq!(map.len(), 3);
+    /// assert_eq!(map.find("b"), Some(&2));
+    /// ```
     pub fn insert(&self, k: K, v: V) -> Self {
         Self {
             n: S::insert(&self.n, k, v),
@@ -239,9 +279,26 @@ impl<K: Ord + Clone, V: Clone> Map<K, V> {
         }
     }
 
-    ///
-    /// create and return a new map with the key, value pair removed
-    ///
+    /// Creates a new map with the given key-value pair removed.
+    /// 
+    /// If the key doesn't exist, the returned map is unchanged.
+    /// This operation is O(log n) and shares structure with the original map.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `k` - The key to remove
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Map;
+    /// 
+    /// let map = Map::empty().insert(1, "one").insert(2, "two").insert(3, "three");
+    /// let map2 = map.remove(2);
+    /// assert_eq!(map.len(), 3);  // Original unchanged
+    /// assert_eq!(map2.len(), 2);
+    /// assert_eq!(map2.find(2), None);
+    /// ```
     pub fn remove(&self, k: K) -> Self {
         let size = match S::find(&self.n, k.clone()) {
             Some(_) => self.size - 1,
@@ -251,48 +308,177 @@ impl<K: Ord + Clone, V: Clone> Map<K, V> {
         Self { n, size }
     }
 
-    ///
-    /// search for a key and return true if the key exist, false otherwise
-    ///
+    /// Returns true if the map contains the given key.
+    /// 
+    /// This operation is O(log n).
+    /// 
+    /// # Arguments
+    /// 
+    /// * `k` - The key to search for
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Map;
+    /// 
+    /// let map = Map::empty().insert(1, "one").insert(2, "two");
+    /// assert!(map.exist(1));
+    /// assert!(!map.exist(3));
+    /// ```
     pub fn exist(&self, k: K) -> bool {
         S::find(&self.n, k).is_some()
     }
 
-    ///
-    /// search for a key and return a pointer to the value if the key exists, None otherwise
-    ///
+    /// Returns a reference to the value associated with the given key.
+    /// 
+    /// Returns `None` if the key is not present in the map.
+    /// This operation is O(log n).
+    /// 
+    /// # Arguments
+    /// 
+    /// * `k` - The key to search for
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Map;
+    /// 
+    /// let map = Map::empty().insert("key", 42);
+    /// assert_eq!(map.find("key"), Some(&42));
+    /// assert_eq!(map.find("missing"), None);
+    /// ```
     pub fn find(&self, k: K) -> Option<&V> {
         S::find(&self.n, k)
     }
 
-    ///
-    /// walk the list/stack and build a vector of keys and return it
-    ///
+    /// Converts the map to a vector of key-value pairs in sorted order by key.
+    /// 
+    /// This operation is O(n).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Map;
+    /// 
+    /// let map = Map::empty().insert(3, "c").insert(1, "a").insert(2, "b");
+    /// let vec = map.to_vec();
+    /// assert_eq!(vec, vec![(1, "a"), (2, "b"), (3, "c")]); // Sorted by key
+    /// ```
     pub fn to_vec(&self) -> Vec<(K, V)> {
         let mut v = Vec::new();
         S::to_vec(&self.n, &mut v);
         v
     }
 
-    ///
-    /// return the maximum tree height
-    ///
+    /// Returns the height of the balanced tree.
+    /// 
+    /// The height is the length of the longest path from root to leaf.
+    /// This operation is O(1) as height is cached.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Map;
+    /// 
+    /// let map = Map::empty().insert(1, "a").insert(2, "b").insert(3, "c");
+    /// assert!(map.height() > 0);
+    /// ```
     pub fn height(&self) -> usize {
         self.n.height()
     }
 
-    ///
-    /// return true if the map is empty
-    ///
+    /// Returns true if the map is empty.
+    /// 
+    /// This operation is O(1).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Map;
+    /// 
+    /// let empty = Map::<i32, String>::empty();
+    /// assert!(empty.is_empty());
+    /// 
+    /// let non_empty = empty.insert(1, String::from("one"));
+    /// assert!(!non_empty.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.size == 0
     }
 
-    ///
-    /// return the number of elements in the map
-    ///
+    /// Returns the number of key-value pairs in the map.
+    /// 
+    /// This operation is O(1) as the size is cached.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Map;
+    /// 
+    /// let map = Map::empty().insert(1, "a").insert(2, "b").insert(3, "c");
+    /// assert_eq!(map.len(), 3);
+    /// ```
     pub fn len(&self) -> usize {
         self.size
+    }
+
+    /// Returns an iterator over the map's key-value pairs.
+    /// 
+    /// The iterator yields pairs in sorted order by key.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Map;
+    /// 
+    /// let map = Map::empty().insert(3, "c").insert(1, "a").insert(2, "b");
+    /// let collected: Vec<_> = map.iter().collect();
+    /// assert_eq!(collected, vec![(1, "a"), (2, "b"), (3, "c")]);
+    /// ```
+    pub fn iter(&self) -> MapIter<K, V> {
+        let mut stack = Vec::new();
+        if !matches!(self.n.as_ref(), Empty) {
+            stack.push(self.n.clone());
+        }
+        MapIter {
+            stack,
+            _phantom: PhantomData::default(),
+        }
+    }
+}
+
+/// An iterator over the key-value pairs of a `Map`.
+/// 
+/// This struct is created by the [`Map::iter`] method.
+/// The iterator yields pairs in sorted order by key.
+pub struct MapIter<'a, K: Ord + Clone, V: Clone> {
+    stack: Vec<N<K, V>>,
+    _phantom: PhantomData<&'a (K, V)>,
+}
+
+impl<'a, K: Ord + Clone, V: Clone> std::iter::Iterator for MapIter<'a, K, V> {
+    type Item = (K, V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(node) = self.stack.pop() {
+            match node.as_ref() {
+                Empty => continue,
+                One(k, v) => return Some((k.clone(), v.clone())),
+                Node(_, left, k, v, right) => {
+                    // Push right first (will be processed after)
+                    if !matches!(right.as_ref(), Empty) {
+                        self.stack.push(right.clone());
+                    }
+                    // Push current node as One to process the key-value
+                    self.stack.push(S::one(k.clone(), v.clone()));
+                    // Push left (will be processed first - in-order traversal)
+                    if !matches!(left.as_ref(), Empty) {
+                        self.stack.push(left.clone());
+                    }
+                }
+            }
+        }
+        None
     }
 }
 
@@ -405,6 +591,33 @@ mod tests {
         for i in 0..v.len() {
             assert_eq!(v[i].0, sorted[i]);
             assert_eq!(v[i].1, sorted[i]);
+        }
+    }
+
+    #[test]
+    fn iter() {
+        let numbers = [5, 10, 3, 120, 4, 9, 27, 1, 45];
+        let sorted = [1, 3, 4, 5, 9, 10, 27, 45, 120];
+        let mut n = Map::empty();
+        for i in numbers {
+            n = n.insert(i, i * 2); // Use i*2 as value to test proper pairing
+        }
+
+        // Test iterator yields elements in sorted order
+        let mut count = 0;
+        for (k, v) in n.iter() {
+            assert_eq!(k, sorted[count]);
+            assert_eq!(v, sorted[count] * 2);
+            count += 1;
+        }
+        assert_eq!(count, sorted.len());
+
+        // Test that we can iterate multiple times (persistent data structure)
+        let collected: Vec<(i32, i32)> = n.iter().collect();
+        assert_eq!(collected.len(), sorted.len());
+        for i in 0..collected.len() {
+            assert_eq!(collected[i].0, sorted[i]);
+            assert_eq!(collected[i].1, sorted[i] * 2);
         }
     }
 

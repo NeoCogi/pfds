@@ -1,8 +1,15 @@
 use crate::{HashSet, Hashable};
 use std::{ops::Deref, sync::Arc};
 
+/// A trait for accumulating data while traversing a tree.
+/// 
+/// This trait is used with recursive tree operations to maintain
+/// state during traversal, such as collecting a path from root to current node.
 pub trait TreeAcc<D: Clone> {
+    /// Push data onto the accumulator.
     fn push(&mut self, data: &D);
+    
+    /// Pop data from the accumulator.
     fn pop(&mut self);
 }
 
@@ -320,30 +327,110 @@ impl<D: Clone> PathPriv<D> {
     }
 }
 
+/// A persistent (immutable) multi-way tree with path-based navigation.
+/// 
+/// `Path` represents a position in a tree, maintaining the path from root
+/// to the current node. All operations return new paths, leaving the original
+/// tree structure unchanged through structural sharing.
+/// 
+/// # Performance
+/// 
+/// - Navigation (parent/children): O(1) to O(c) where c is number of children
+/// - Add/remove node: O(h) where h is height of tree
+/// - Apply operations: O(n) for recursive, O(1) for single node
+/// - Flatten: O(n) where n is total nodes in subtree
 #[derive(Clone)]
 pub struct Path<D: Clone> {
     path: Arc<PathPriv<D>>,
 }
 
 impl<D: Clone> Path<D> {
+    /// Creates a new tree with a single root node containing the given data.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `root_data` - The data for the root node
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new("root");
+    /// assert_eq!(tree.len(), 1);
+    /// assert_eq!(*tree.data(), "root");
+    /// ```
     pub fn new(root_data: D) -> Self {
         Self {
             path: PathPriv::new(root_data),
         }
     }
 
+    /// Adds a new child node to the current node.
+    /// 
+    /// Returns a new path pointing to the newly added child.
+    /// This operation is O(h) where h is the height of the tree.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `data` - The data for the new child node
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new("root");
+    /// let child = tree.add_node("child1");
+    /// assert_eq!(*child.data(), "child1");
+    /// assert_eq!(child.len(), 2); // Path length is 2 (root -> child)
+    /// ```
     pub fn add_node(&self, data: D) -> Self {
         Self {
             path: self.path.add_node(data),
         }
     }
 
+    /// Removes the current node from the tree.
+    /// 
+    /// Returns a path pointing to the parent of the removed node.
+    /// This operation is O(h) where h is the height of the tree.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if called on the root node (path length = 1).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new("root");
+    /// let child = tree.add_node("child");
+    /// let back_to_root = child.remove_node();
+    /// assert_eq!(back_to_root.len(), 1);
+    /// ```
     pub fn remove_node(&self) -> Self {
         Self {
             path: self.path.remove_node(),
         }
     }
 
+    /// Returns a path pointing to the root of the tree.
+    /// 
+    /// This operation is O(1).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new("root");
+    /// let deep = tree.add_node("a").add_node("b").add_node("c");
+    /// let root = deep.root();
+    /// assert_eq!(root.len(), 1);
+    /// assert_eq!(*root.data(), "root");
+    /// ```
     pub fn root(&self) -> Self {
         Self {
             path: Arc::new(PathPriv {
@@ -352,10 +439,38 @@ impl<D: Clone> Path<D> {
         }
     }
 
+    /// Returns a reference to the data of the current node.
+    /// 
+    /// This operation is O(1).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new(42);
+    /// assert_eq!(*tree.data(), 42);
+    /// ```
     pub fn data(&self) -> &D {
         self.path.node_vec.last().unwrap().data()
     }
 
+    /// Returns a vector of paths to all children of the current node.
+    /// 
+    /// Each returned path points to a child node and includes
+    /// the full path from root to that child.
+    /// This operation is O(c) where c is the number of children.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new("root");
+    /// let with_children = tree.add_node("a").parent().add_node("b");
+    /// let root = with_children.root();
+    /// assert_eq!(root.children().len(), 2);
+    /// ```
     pub fn children(&self) -> Vec<Self> {
         let mut res = Vec::new();
         let iter = self.path.node_vec.last().unwrap().iter_children();
@@ -370,6 +485,24 @@ impl<D: Clone> Path<D> {
         res
     }
 
+    /// Returns a path pointing to the parent of the current node.
+    /// 
+    /// This operation is O(1).
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if called on the root node.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new("root");
+    /// let child = tree.add_node("child");
+    /// let parent = child.parent();
+    /// assert_eq!(*parent.data(), "root");
+    /// ```
     pub fn parent(&self) -> Self {
         let len = self.path.node_vec.len();
         let parent_path = Vec::from(&self.path.node_vec[0..len - 1]);
@@ -380,12 +513,48 @@ impl<D: Clone> Path<D> {
         }
     }
 
+    /// Creates a new tree with the current node's data replaced.
+    /// 
+    /// This operation is O(h) where h is the height of the tree.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `data` - The new data for the current node
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new("root").add_node("old");
+    /// let updated = tree.set_data("new");
+    /// assert_eq!(*tree.data(), "old");    // Original unchanged
+    /// assert_eq!(*updated.data(), "new");
+    /// ```
     pub fn set_data(&self, data: D) -> Self {
         Self {
             path: self.path.set_data(data),
         }
     }
 
+    /// Applies a function to the current node's data.
+    /// 
+    /// If the function returns `Some(new_data)`, creates a new tree with
+    /// the updated data. If it returns `None`, returns the original tree.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `f` - Function that transforms the node data
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new(5);
+    /// let doubled = tree.apply(|x| Some(x * 2));
+    /// assert_eq!(*doubled.data(), 10);
+    /// ```
     pub fn apply<F: FnOnce(&D) -> Option<D>>(&self, f: F) -> Self {
         match self.path.apply(f) {
             Some(path) => Self { path },
@@ -393,6 +562,26 @@ impl<D: Clone> Path<D> {
         }
     }
 
+    /// Recursively applies a function to all nodes in the subtree.
+    /// 
+    /// Traverses the entire subtree rooted at the current node,
+    /// applying the function to each node's data.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `f` - Function that transforms node data
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new(1)
+    ///     .add_node(2).parent()
+    ///     .add_node(3);
+    /// let doubled = tree.root().apply_recursive(|x| Some(x * 2));
+    /// // All nodes in tree are doubled
+    /// ```
     pub fn apply_recursive<F: FnMut(&D) -> Option<D>>(&self, mut f: F) -> Self {
         match self.path.apply_recursive(&mut f) {
             Some(path) => Self { path },
@@ -419,16 +608,68 @@ impl<D: Clone> Path<D> {
         }
     }
 
+    /// Returns a vector of paths to all nodes in the subtree.
+    /// 
+    /// Performs a depth-first traversal of the subtree rooted at
+    /// the current node, returning paths to all nodes including
+    /// the current node itself.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new("root")
+    ///     .add_node("a").parent()
+    ///     .add_node("b");
+    /// let all_nodes = tree.root().flatten();
+    /// assert_eq!(all_nodes.len(), 3); // root, a, b
+    /// ```
     pub fn flatten(&self) -> Vec<Self> {
         let mut res = Vec::new();
         Self::flatten_recursive(&self, &mut res);
         res
     }
 
+    /// Returns the length of the path from root to current node.
+    /// 
+    /// This is the depth of the current node plus one.
+    /// The root has length 1.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new("root");
+    /// assert_eq!(tree.len(), 1);
+    /// let child = tree.add_node("child");
+    /// assert_eq!(child.len(), 2);
+    /// ```
     pub fn len(&self) -> usize {
         self.path.node_vec.len()
     }
 
+    /// Recursively filters the tree, keeping only nodes that satisfy the predicate.
+    /// 
+    /// Returns `Some(tree)` with only matching nodes and their ancestors,
+    /// or `None` if no nodes match.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `f` - Predicate function to test each node
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new(5)
+    ///     .add_node(3).parent()
+    ///     .add_node(7);
+    /// let filtered = tree.root().filter_recursive(|x| *x > 4);
+    /// // Only nodes with values > 4 are kept
+    /// ```
     pub fn filter_recursive<F: Fn(&D) -> bool>(&self, f: F) -> Option<Self> {
         match self.path.filter_recursive(f) {
             Some(path) => Some(Self { path }),
@@ -454,6 +695,27 @@ impl<D: Clone> Path<D> {
 
     // breath first
     #[inline(never)]
+    /// Recursively iterates over all nodes in the subtree.
+    /// 
+    /// Performs a breadth-first traversal, calling the function
+    /// on each node in the subtree.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `f` - Function to call on each node
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new("root")
+    ///     .add_node("child1").parent()
+    ///     .add_node("child2");
+    /// let mut count = 0;
+    /// tree.root().iter_recursive(&mut |_node| count += 1);
+    /// assert_eq!(count, 3);
+    /// ```
     pub fn iter_recursive<F: FnMut(&Path<D>)>(&self, f: &mut F) {
         f(self);
         for c in self.children().iter() {
@@ -461,6 +723,22 @@ impl<D: Clone> Path<D> {
         }
     }
 
+    /// Removes all children from the current node.
+    /// 
+    /// Returns a new tree where the current node has no children.
+    /// If the node already has no children, returns the original tree.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new("root")
+    ///     .add_node("a").parent()
+    ///     .add_node("b").parent();
+    /// let no_children = tree.remove_all_children();
+    /// assert_eq!(no_children.children().len(), 0);
+    /// ```
     pub fn remove_all_children(&self) -> Self {
         match self.path.node().0.children.len() {
             x if x > 0 => {
@@ -473,6 +751,25 @@ impl<D: Clone> Path<D> {
         }
     }
 
+    /// Maps a function over the data of the current node and all its descendants.
+    /// 
+    /// Recursively applies the function to transform data in the entire subtree.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `f` - Function to transform each node's data
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Path;
+    /// 
+    /// let tree = Path::new(1)
+    ///     .add_node(2).parent()
+    ///     .add_node(3);
+    /// let incremented = tree.root().map_data(|x| Some(x + 1));
+    /// // All values in tree are incremented by 1
+    /// ```
     pub fn map_data<F: FnMut(&D) -> Option<D>>(&self, mut f: F) -> Self {
         match self.path.node_vec[self.path.node_vec.len() - 1].map_data(&mut f) {
             Some(n) => Path {

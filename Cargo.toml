@@ -1,6 +1,6 @@
 [package]
 name = "pfds"
-version = "0.6.0-alpha1"
+version = "0.6.0"
 edition = "2018"
 license = "BSD-3-Clause"
 authors = [

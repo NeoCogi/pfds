@@ -62,7 +62,7 @@ fn pop<E>(l: &N<E>) -> N<E> {
 
 fn top<E>(l: &N<E>) -> &E {
     match l.as_ref() {
-        Nil => panic!("pop: list is empty"),
+        Nil => panic!("top: list is empty"),
         Node(_, e, _) => e,
     }
 }
@@ -102,74 +102,190 @@ fn rev<E: Clone>(l: &N<E>) -> N<E> {
     }
 }
 
+/// A persistent (immutable) stack/list data structure.
+/// 
+/// `List` is implemented as a singly-linked list with structural sharing,
+/// making it efficient for stack-like operations. All operations return
+/// a new list, leaving the original unchanged.
+/// 
+/// # Performance
+/// 
+/// - `push`: O(1)
+/// - `pop`: O(1)
+/// - `top`: O(1)
+/// - `len`: O(1) - length is cached
+/// - `rev`: O(n)
+/// - `to_vec`: O(n)
 #[derive(Clone)]
 pub struct List<E: Clone + Sized> {
     n: N<E>,
 }
 
 impl<E: Clone + Sized> List<E> {
-    ///
-    /// create and return a new empty list/stack
-    ///
+    /// Creates a new empty list.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::List;
+    /// 
+    /// let list: List<i32> = List::empty();
+    /// assert!(list.is_empty());
+    /// assert_eq!(list.len(), 0);
+    /// ```
     pub fn empty() -> Self {
         Self { n: empty() }
     }
 
-    ///
-    /// create and return a new list/stack with the new element added as the top element
-    ///
+    /// Creates a new list with the given element added to the front (top).
+    /// 
+    /// This operation is O(1) and shares structure with the original list.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `e` - The element to add to the front of the list
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::List;
+    /// 
+    /// let list = List::empty().push(1).push(2).push(3);
+    /// assert_eq!(list.len(), 3);
+    /// assert_eq!(*list.top(), 3); // Last pushed element is at the top
+    /// ```
     pub fn push(&self, e: E) -> Self {
         Self {
             n: push(&self.n, e),
         }
     }
 
-    ///
-    /// create and return a new list/stack with the top element removed.
-    /// This actually creates a thin wrapper around the next element in the list
-    ///
+    /// Creates a new list with the top element removed.
+    /// 
+    /// This operation is O(1) and shares structure with the original list.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the list is empty.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::List;
+    /// 
+    /// let list = List::empty().push(1).push(2);
+    /// let list2 = list.pop();
+    /// assert_eq!(list.len(), 2);  // Original unchanged
+    /// assert_eq!(list2.len(), 1);
+    /// assert_eq!(*list2.top(), 1);
+    /// ```
     pub fn pop(&self) -> Self {
         Self { n: pop(&self.n) }
     }
 
-    ///
-    /// return a reference to the top element of the list/stack
-    ///
+    /// Returns a reference to the top element of the list.
+    /// 
+    /// This operation is O(1).
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the list is empty.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::List;
+    /// 
+    /// let list = List::empty().push(42);
+    /// assert_eq!(*list.top(), 42);
+    /// ```
     pub fn top(&self) -> &E {
         top(&self.n)
     }
 
-    ///
-    /// return true if the list/stack is empty
-    ///
+    /// Returns true if the list is empty.
+    /// 
+    /// This operation is O(1).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::List;
+    /// 
+    /// let empty = List::<i32>::empty();
+    /// assert!(empty.is_empty());
+    /// 
+    /// let non_empty = empty.push(1);
+    /// assert!(!non_empty.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         len(&self.n) == 0
     }
 
-    ///
-    /// return the length of the current list/stack
-    ///
+    /// Returns the number of elements in the list.
+    /// 
+    /// This operation is O(1) as the length is cached.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::List;
+    /// 
+    /// let list = List::empty().push(1).push(2).push(3);
+    /// assert_eq!(list.len(), 3);
+    /// ```
     pub fn len(&self) -> usize {
         len(&self.n)
     }
 
-    ///
-    /// walk the list/stack and build a vector and returns it (top element first)
-    ///
+    /// Converts the list to a vector.
+    /// 
+    /// Elements are returned with the top element first.
+    /// This operation is O(n).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::List;
+    /// 
+    /// let list = List::empty().push(1).push(2).push(3);
+    /// let vec = list.to_vec();
+    /// assert_eq!(vec, vec![3, 2, 1]); // Top element (3) is first
+    /// ```
     pub fn to_vec(&self) -> Vec<E> {
         to_vec(&self.n)
     }
 
-    ///
-    /// create an return a new list/stack that is the reverse of the current list
-    ///
+    /// Creates a new list that is the reverse of the current list.
+    /// 
+    /// This operation is O(n).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::List;
+    /// 
+    /// let list = List::empty().push(1).push(2).push(3);
+    /// let reversed = list.rev();
+    /// assert_eq!(reversed.to_vec(), vec![1, 2, 3]);
+    /// ```
     pub fn rev(&self) -> List<E> {
         List { n: rev(&self.n) }
     }
 
-    ///
-    /// returns an iterator
-    ///
+    /// Returns an iterator over the list elements.
+    /// 
+    /// The iterator yields elements from top to bottom.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::List;
+    /// 
+    /// let list = List::empty().push(1).push(2).push(3);
+    /// let collected: Vec<_> = list.iter().collect();
+    /// assert_eq!(collected, vec![3, 2, 1]);
+    /// ```
     pub fn iter<'a>(&self) -> Iter<'a, E> {
         Iter {
             node: self.n.clone(),

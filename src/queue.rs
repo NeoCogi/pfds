@@ -28,6 +28,7 @@
 // POSSIBILITY OF SUCH DAMAGE.
 //
 use std::sync::Arc;
+use std::marker::PhantomData;
 
 use crate::list::*;
 
@@ -62,7 +63,7 @@ fn dequeue<E: Clone>(q: &N<E>) -> (E, N<E>) {
     match q.as_ref() {
         Empty => panic!("queue is empty"),
         Node { back: b, front: f } => match (b.len(), f.len()) {
-            (0, 0) => panic!("queue is empty"),
+            (0, 0) => unreachable!("node() invariant violated: Node should never have both lists empty"),
             (_, 0) => {
                 let l = b.rev();
                 let p = l.pop();
@@ -98,55 +99,188 @@ fn to_vec<E: Clone>(l: &N<E>) -> Vec<E> {
     }
 }
 
+/// A persistent (immutable) FIFO queue data structure.
+/// 
+/// `Queue` is implemented using two lists (front and back) to achieve
+/// amortized O(1) enqueue and dequeue operations. All operations return
+/// a new queue, leaving the original unchanged.
+/// 
+/// # Performance
+/// 
+/// - `enqueue`: O(1)
+/// - `dequeue`: O(1) amortized, O(n) worst case when reversing back list
+/// - `is_empty`: O(1)
+/// - `len`: O(1) - length is cached
+/// - `to_vec`: O(n)
 #[derive(Clone)]
 pub struct Queue<E: Clone> {
     n: N<E>,
 }
 
 impl<E: Clone> Queue<E> {
-    ///
-    /// create and return a new empty queue
-    ///
+    /// Creates a new empty queue.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Queue;
+    /// 
+    /// let queue: Queue<i32> = Queue::empty();
+    /// assert!(queue.is_empty());
+    /// assert_eq!(queue.len(), 0);
+    /// ```
     pub fn empty() -> Self {
         Self { n: empty() }
     }
 
-    ///
-    /// create and return a new queue with the new element at the end
-    ///
+    /// Creates a new queue with the given element added to the back.
+    /// 
+    /// This operation is O(1) and shares structure with the original queue.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `e` - The element to add to the back of the queue
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Queue;
+    /// 
+    /// let queue = Queue::empty().enqueue(1).enqueue(2).enqueue(3);
+    /// assert_eq!(queue.len(), 3);
+    /// ```
     pub fn enqueue(&self, e: E) -> Self {
         Self {
             n: enqueue(&self.n, e),
         }
     }
 
-    ///
-    /// create a new queue with the oldest element removed and returned
-    ///
+    /// Removes and returns the front element and a new queue without that element.
+    /// 
+    /// This operation is O(1) amortized. When the front list is empty,
+    /// it reverses the back list which takes O(n) time.
+    /// 
+    /// # Returns
+    /// 
+    /// A tuple containing:
+    /// - The front element
+    /// - A new queue without the front element
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the queue is empty.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Queue;
+    /// 
+    /// let queue = Queue::empty().enqueue(1).enqueue(2);
+    /// let (first, queue2) = queue.dequeue();
+    /// assert_eq!(first, 1);
+    /// assert_eq!(queue.len(), 2);  // Original unchanged
+    /// assert_eq!(queue2.len(), 1);
+    /// ```
     pub fn dequeue(&self) -> (E, Self) {
         let (e, n) = dequeue(&self.n);
         (e, Self { n })
     }
 
-    ///
-    /// return true if the queue is empty
-    ///
+    /// Returns true if the queue is empty.
+    /// 
+    /// This operation is O(1).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Queue;
+    /// 
+    /// let empty = Queue::<i32>::empty();
+    /// assert!(empty.is_empty());
+    /// 
+    /// let non_empty = empty.enqueue(1);
+    /// assert!(!non_empty.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         len(&self.n) == 0
     }
 
-    ///
-    /// return the length of the current queue
-    ///
+    /// Returns the number of elements in the queue.
+    /// 
+    /// This operation is O(1) as the length is cached.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Queue;
+    /// 
+    /// let queue = Queue::empty().enqueue(1).enqueue(2).enqueue(3);
+    /// assert_eq!(queue.len(), 3);
+    /// ```
     pub fn len(&self) -> usize {
         len(&self.n)
     }
 
-    ///
-    /// walk the queue and build a vector and return it (oldest elements first)
-    ///
+    /// Converts the queue to a vector.
+    /// 
+    /// Elements are returned in FIFO order (oldest elements first).
+    /// This operation is O(n).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Queue;
+    /// 
+    /// let queue = Queue::empty().enqueue(1).enqueue(2).enqueue(3);
+    /// let vec = queue.to_vec();
+    /// assert_eq!(vec, vec![1, 2, 3]); // FIFO order
+    /// ```
     pub fn to_vec(&self) -> Vec<E> {
         to_vec(&self.n)
+    }
+
+    /// Returns an iterator over the queue elements.
+    /// 
+    /// The iterator yields elements in FIFO order (oldest first).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use pfds::Queue;
+    /// 
+    /// let queue = Queue::empty().enqueue(1).enqueue(2).enqueue(3);
+    /// let collected: Vec<_> = queue.iter().collect();
+    /// assert_eq!(collected, vec![1, 2, 3]);
+    /// ```
+    pub fn iter(&self) -> QueueIter<E> {
+        QueueIter {
+            queue: self.n.clone(),
+            _phantom: PhantomData::default(),
+        }
+    }
+}
+
+/// An iterator over the elements of a `Queue`.
+/// 
+/// This struct is created by the [`Queue::iter`] method.
+/// The iterator yields elements in FIFO order.
+pub struct QueueIter<'a, E: Clone> {
+    queue: N<E>,
+    _phantom: PhantomData<&'a E>,
+}
+
+impl<'a, E: Clone> std::iter::Iterator for QueueIter<'a, E> {
+    type Item = E;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.queue.as_ref() {
+            Empty => None,
+            _ => {
+                let (elem, new_queue) = dequeue(&self.queue);
+                self.queue = new_queue;
+                Some(elem)
+            }
+        }
     }
 }
 
@@ -213,5 +347,31 @@ mod tests {
         for i in 0..50000 {
             assert_eq!(queue_elems[i], elements[i + 50000]);
         }
+    }
+
+    #[test]
+    fn iter() {
+        let mut elements = Vec::new();
+        let mut q = Queue::empty();
+        for _ in 0..1000 {
+            let e = rand();
+            elements.push(e);
+            q = q.enqueue(e);
+        }
+
+        assert_eq!(elements.len(), 1000);
+        assert_eq!(elements.len(), q.len());
+
+        // Test iterator yields elements in FIFO order
+        let mut count = 0;
+        for elem in q.iter() {
+            assert_eq!(elem, elements[count]);
+            count += 1;
+        }
+        assert_eq!(count, 1000);
+
+        // Test that we can iterate multiple times (persistent data structure)
+        let collected: Vec<i32> = q.iter().collect();
+        assert_eq!(collected, elements);
     }
 }

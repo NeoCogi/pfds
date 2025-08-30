@@ -191,12 +191,8 @@ impl<K: Hashable + Eq + Clone> HashSet<K> {
                 count: self.count + 1,
             },
             None => {
-                // the key is already found, overwrite it
-                let n = N::insert(self.remove(k.clone()).n.as_ref(), 0, k).unwrap();
-                Self {
-                    n: H::new(n),
-                    count: self.count,
-                }
+                // the key is already found, return self unchanged
+                self.clone()
             }
         }
     }
